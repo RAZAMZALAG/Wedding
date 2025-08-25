@@ -1,0 +1,17 @@
+Server/env
+Server/__pycache__
+Server/instance
+Server/.env
+Server/dist
+
+Client/node_modules
+Client/public
+Client/src/.env
+Client/src/.env.production
+
+db
+.env
+.idea/
+__pycache__/
+*.pyc
+*.pyo

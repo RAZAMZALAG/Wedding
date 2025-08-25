@@ -1,0 +1,36 @@
+services:
+  server: # Flask App
+    build:
+      context: .
+    command:
+      ["gunicorn", "--bind", "0.0.0.0:${CLIENT_PORT}", "main:create_app()"]
+    ports:
+      - ${CLIENT_PORT}:${CLIENT_PORT}
+    networks:
+      - app-network
+    container_name: server
+    restart: always
+    image: server
+    depends_on:
+      - postgres
+
+  postgres: # PostgresSQL DB
+    image: postgres:latest
+    container_name: postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    restart: always
+    volumes:
+      - ./db:/data/db:rw
+      - ./Database/01_db.sql:/docker-entrypoint-initdb.d/01_db.sql
+      - ./Database/02_data.sql:/docker-entrypoint-initdb.d/02_data.sql
+    networks:
+      - app-network
+
+
+networks:
+  app-network:
+    name: app-network
+    driver: bridge
