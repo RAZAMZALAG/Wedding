@@ -43,6 +43,7 @@ import {
   EP_USERS,
   EP_USERS_UPDATE,
   EP_USERS_BLOCK,
+  EP_USERS_UNBLOCK,
   EP_USERS_DELETE,
   EP_USERS_DELETE_NON_ADMINS,
 } from "../constants.js";
@@ -689,12 +690,13 @@ const UsersManagement = () => {
           <Button
             onClick={async () => {
               try {
-                const response = await api.put(
-                  EP_USERS_BLOCK + userToToggleBlock.id,
-                  {
-                    block: !userToToggleBlock.blocked,
-                  },
-                );
+                const isCurrentlyBlocked = userToToggleBlock.blocked;
+                const endpoint = isCurrentlyBlocked 
+                  ? `${EP_USERS_UNBLOCK}${userToToggleBlock.id}/unblock`
+                  : `${EP_USERS_BLOCK}${userToToggleBlock.id}/block`;
+                
+                const response = await api.post(endpoint);
+                
                 if (response.status === 200) {
                   setUsers((prev) =>
                     prev.map((u) =>

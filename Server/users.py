@@ -211,16 +211,28 @@ def block_user(user_id):
     claims = get_jwt()
     if int(claims.get("permission", 0)) > 2:
         try:
-            user = User.find_by_id(user_id)
+            # Find user in database
+            collection = User.get_collection()
+            user = collection.find_one({"_id": user_id})
+            
             if not user:
                 return jsonify({"error": "USER_NOT_FOUND"}), 404
 
-            user.blocked = True
-            user.save()
+            # Update user to blocked
+            result = collection.update_one(
+                {"_id": user_id},
+                {"$set": {"blocked": True}}
+            )
             
-            return jsonify({"message": "USER_BLOCKED"}), 200
+            if result.modified_count > 0:
+                return jsonify({"message": "USER_BLOCKED"}), 200
+            else:
+                return jsonify({"message": "User was already blocked"}), 200
             
         except Exception as e:
+            import traceback
+            print(f"Error blocking user: {str(e)}")
+            print(f"Traceback: {traceback.format_exc()}")
             return jsonify({"error": f"Error blocking user: {str(e)}"}), 500
     else:
         return jsonify({"error": "FORBIDDEN"}), 403
@@ -232,16 +244,28 @@ def unblock_user(user_id):
     claims = get_jwt()
     if int(claims.get("permission", 0)) > 2:
         try:
-            user = User.find_by_id(user_id)
+            # Find user in database
+            collection = User.get_collection()
+            user = collection.find_one({"_id": user_id})
+            
             if not user:
                 return jsonify({"error": "USER_NOT_FOUND"}), 404
 
-            user.blocked = False
-            user.save()
+            # Update user to unblocked
+            result = collection.update_one(
+                {"_id": user_id},
+                {"$set": {"blocked": False}}
+            )
             
-            return jsonify({"message": "USER_UNBLOCKED"}), 200
+            if result.modified_count > 0:
+                return jsonify({"message": "USER_UNBLOCKED"}), 200
+            else:
+                return jsonify({"message": "User was already unblocked"}), 200
             
         except Exception as e:
+            import traceback
+            print(f"Error unblocking user: {str(e)}")
+            print(f"Traceback: {traceback.format_exc()}")
             return jsonify({"error": f"Error unblocking user: {str(e)}"}), 500
     else:
         return jsonify({"error": "FORBIDDEN"}), 403
