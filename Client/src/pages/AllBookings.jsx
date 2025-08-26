@@ -140,31 +140,14 @@ const AllBookings = () => {
     try {
       setLoading(true);
       setActionLoading(true, bookingIndex);
-      let url;
-      switch (status) {
-        case "APPROVED":
-          url = EP_BOOKING_APPROVE;
-          break;
-        case "REJECTED":
-          url = EP_BOOKING_REJECT;
-          break;
-        case "RETURNED":
-          url = EP_BOOKING_RETURN;
-          break;
-        case "COLLECTED":
-          url = EP_BOOKING_COLLECT;
-          break;
-        case "PENDING":
-          url = EP_BOOKING_PENDING;
-          break;
-        default:
-          status = "REJECTED";
-          url = EP_BOOKING_REJECT;
-      }
-      const response = await api.put(url, {
-        cart_id: bookings[bookingIndex].cart_id,
-        status: status, // Only update the status
-      });
+      
+      // Use the correct endpoint format: /bookings/<booking_id>/status/<status>
+      const bookingId = bookings[bookingIndex]._id || bookings[bookingIndex].id;
+      const url = `${EP_BOOKINGS}${bookingId}/status/${status}`;
+      
+      console.log(`Updating booking ${bookingId} to status ${status}`);
+      
+      const response = await api.put(url);
 
       if (response.status === 200) {
         setBookings((prevState) =>
@@ -177,6 +160,7 @@ const AllBookings = () => {
         );
       }
     } catch (error) {
+      console.error("Error updating booking status:", error);
     } finally {
       setActionLoading(false, bookingIndex);
       setLoading(false);
