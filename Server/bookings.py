@@ -154,10 +154,155 @@ def get_bookings():
             return jsonify({"error": f"Error getting user bookings: {str(e)}"}), 500
 
 
+@booking_bp.get('/my-bookings')
+@jwt_required()
+def get_my_personal_bookings():
+    """Get current user's personal bookings - new endpoint"""
+    try:
+        print(f"DEBUG: My bookings request for user {current_user._id}")
+        
+        # Get pagination parameters
+        page = int(request.args.get("page", default=1))
+        per_page = int(request.args.get("per_page", default=20))
+        direction = request.args.get("direction", default="desc")
+        
+        # Get user's orders
+        orders = list(Order.get_user_orders(current_user._id))
+        print(f"DEBUG: Found {len(orders)} orders")
+        
+        if not orders:
+            return jsonify({
+                "bookings": [],
+                "total": 0,
+                "page": page,
+                "per_page": per_page,
+                "total_pages": 0
+            }), 200
+        
+        # Sort orders by created_at
+        if direction == "desc":
+            orders.sort(key=lambda x: x.created_at, reverse=True)
+        else:
+            orders.sort(key=lambda x: x.created_at)
+        
+        # Pagination
+        total_orders = len(orders)
+        start_index = (page - 1) * per_page
+        end_index = start_index + per_page
+        paginated_orders = orders[start_index:end_index]
+        
+        # Build response with cart items
+        orders_data = []
+        for order in paginated_orders:
+            try:
+                cart = Cart.find_by_id(order.cart_id)
+                cart_items = []
+                if cart and hasattr(cart, 'items') and cart.items:
+                    print(f"DEBUG: Cart has {len(cart.items)} items")
+                    for cart_item in cart.items:
+                        print(f"DEBUG: Processing cart_item: {cart_item}")
+                        item = Item.find_by_id(cart_item['item_id'])
+                        if item:
+                            item_dict = {
+                                "item": item.to_dict(),
+                                "amount": cart_item['amount']
+                            }
+                            print(f"DEBUG: Added item_dict: {item_dict}")
+                            cart_items.append(item_dict)
+                        else:
+                            print(f"DEBUG: Item not found for ID: {cart_item['item_id']}")
+                else:
+                    print(f"DEBUG: Cart issues - cart exists: {cart is not None}, has items attr: {hasattr(cart, 'items') if cart else False}, items: {getattr(cart, 'items', None) if cart else None}")
+                
+                order_dict = order.to_dict()
+                order_dict["cart_items"] = cart_items
+                orders_data.append(order_dict)
+            except Exception as e:
+                print(f"DEBUG: Error processing order {order._id}: {str(e)}")
+                continue
+        
+        return jsonify({
+            "bookings": orders_data,
+            "total": total_orders,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": (total_orders + per_page - 1) // per_page
+        }), 200
+        
+    except Exception as e:
+        print(f"DEBUG: Error getting my bookings: {str(e)}")
+        return jsonify({"error": f"Error getting personal bookings: {str(e)}"}), 500
+
+
+
 @booking_bp.get('/<booking_id>')
 @jwt_required()
 def get_booking_by_id(booking_id):
     """Get specific booking by ID"""
+    # Handle special case for personal bookings
+    if booking_id == "personal":
+        print(f"DEBUG: Handling personal bookings request for user {current_user._id}")
+        # Get pagination parameters
+        page = int(request.args.get("page", default=1))
+        per_page = int(request.args.get("per_page", default=20))
+        direction = request.args.get("direction", default="desc")
+        
+        try:
+            # Get user's orders
+            orders = list(Order.get_user_orders(current_user._id))
+            print(f"DEBUG: Found {len(orders)} orders for user")
+            
+            if not orders:
+                # No orders found - return empty result
+                return jsonify({
+                    "bookings": [],
+                    "total": 0,
+                    "page": page,
+                    "per_page": per_page,
+                    "total_pages": 0
+                }), 200
+            
+            # Sort orders by created_at
+            if direction == "desc":
+                orders.sort(key=lambda x: x.created_at, reverse=True)
+            else:
+                orders.sort(key=lambda x: x.created_at)
+            
+            # Pagination
+            total_orders = len(orders)
+            start_index = (page - 1) * per_page
+            end_index = start_index + per_page
+            paginated_orders = orders[start_index:end_index]
+            
+            # Build response with cart items
+            orders_data = []
+            for order in paginated_orders:
+                cart = Cart.find_by_id(order.cart_id)
+                cart_items = []
+                if cart and cart.items:
+                    for cart_item in cart.items:
+                        item = Item.find_by_id(cart_item['item_id'])
+                        if item:
+                            cart_items.append({
+                                "item": item.to_dict(),
+                                "amount": cart_item['amount']
+                            })
+                
+                order_dict = order.to_dict()
+                order_dict["cart_items"] = cart_items
+                orders_data.append(order_dict)
+            
+            return jsonify({
+                "bookings": orders_data,
+                "total": total_orders,
+                "page": page,
+                "per_page": per_page,
+                "total_pages": (total_orders + per_page - 1) // per_page
+            }), 200
+            
+        except Exception as e:
+            return jsonify({"error": f"Error getting personal bookings: {str(e)}"}), 500
+    
     try:
         booking = Order.find_by_id(booking_id)
         if not booking:

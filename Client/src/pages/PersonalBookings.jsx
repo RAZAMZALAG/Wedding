@@ -81,9 +81,10 @@ const PersonalBookings = () => {
       });
 
       if (!controller.signal.aborted && response.status === HttpStatusCode.Ok) {
-        setBookings(response.data.bookings);
-        setTotalBookings(response.data.meta.total_bookings);
-        setTotalPages(response.data.meta.total_pages);
+        const data = response.data || {};
+        setBookings(data.bookings || []);
+        setTotalBookings(data.total || 0);
+        setTotalPages(data.total_pages || 0);
       }
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -206,22 +207,22 @@ const PersonalBookings = () => {
           </TableHead>
 
           <TableBody>
-            {bookings.map((booking, index) => (
+            {(bookings || []).map((booking, index) => (
               <TableRow key={index}>
                 {/* Display compact list of items */}
                 <TableCell>
-                  {booking.items.map((item, itemIndex) => (
+                  {(booking.cart_items || []).map((cartItem, itemIndex) => (
                     <div key={itemIndex}>
                       <span>
                         <span
-                          onClick={() => navigate(`/item/${item.id}`)}
+                          onClick={() => navigate(`/item/${cartItem.item.id}`)}
                           style={{ cursor: "pointer" }}
                         >
-                          {t(`items.${item.name}`, { defaultValue: item.name })}
+                          {t(`items.${cartItem.item.name}`, { defaultValue: cartItem.item.name })}
                         </span>{" "}
-                        (x{item.amount}) {item.price} ₪
+                        (x{cartItem.amount}) {cartItem.item.price} ₪
                       </span>
-                      {itemIndex < booking.items.length - 1 && <br />}
+                      {itemIndex < (booking.cart_items || []).length - 1 && <br />}
                     </div>
                   ))}
                 </TableCell>

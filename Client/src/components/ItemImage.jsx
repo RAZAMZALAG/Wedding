@@ -4,7 +4,7 @@ import placeHolderImage from "../assets/tool_placeholder.svg";
 
 const ItemImage = ({ item, width = "100%" }) => {
   const [imageSrc, setImageSrc] = useState(
-    `${import.meta.env.VITE_API_URL}/catalog/${item.image}`,
+    item && item.image ? `${import.meta.env.VITE_API_URL}/catalog/${item.image}` : placeHolderImage,
   );
 
   const handleImageError = () => {
