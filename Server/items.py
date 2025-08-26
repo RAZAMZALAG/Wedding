@@ -252,37 +252,69 @@ def add_item():
         return jsonify({"error": "FORBIDDEN"}), 403
 
     try:
-        data = request.get_json()
+        # Get form data
+        name = request.form.get('name')
+        category = request.form.get('category')
+        price = request.form.get('price')
+        amount = request.form.get('amount')
+        hidden = request.form.get('hidden', 'false').lower() == 'true'
+        image_file = request.files.get('image')
         
         # Validate required fields
-        required_fields = ['name', 'category', 'total_amount', 'price', 'description', 'condition']
-        for field in required_fields:
-            if not data.get(field):
-                return jsonify({"error": f"MISSING_FIELD: {field}"}), 400
+        if not name:
+            return jsonify({"error": "MISSING_FIELD: name"}), 400
+        if not category:
+            return jsonify({"error": "MISSING_FIELD: category"}), 400
+        if not price:
+            return jsonify({"error": "MISSING_FIELD: price"}), 400
+        if not amount:
+            return jsonify({"error": "MISSING_FIELD: amount"}), 400
 
         # Check if category exists
-        category = Category.get_by_name(data['category'])
-        if not category:
+        category_obj = Category.get_by_name(category)
+        if not category_obj:
             # Create new category
-            new_category = Category(name=data['category'])
+            new_category = Category(name=category)
             new_category.save()
+
+        # Handle image file
+        image_filename = None
+        if image_file:
+            # Save image file (you might want to implement proper file handling)
+            image_filename = image_file.filename
 
         # Create new item
         new_item = Item(
-            name=data['name'],
-            category=data['category'],
-            amount=data.get('amount', data['total_amount']),
-            total_amount=data['total_amount'],
-            price=float(data['price']),
-            notes=data.get('notes', ''),
-            description=data['description'],
-            condition=data['condition'],
-            hidden=data.get('hidden', False),
-            image=data.get('image', 'default.jpg')
+            name=name,
+            category=category,
+            amount=int(amount),
+            total_amount=int(amount),
+            price=float(price),
+            notes='',
+            description='',
+            condition='מעולה',
+            hidden=hidden,
+            image=image_filename or 'default.jpg'
         )
         
         new_item.save()
-        return jsonify({"message": "ITEM_CREATED", "item_id": new_item._id}), 201
+        
+        # Return the created item data
+        item_data = {
+            "id": str(new_item._id),
+            "name": new_item.name,
+            "category": new_item.category,
+            "amount": new_item.amount,
+            "total_amount": new_item.total_amount,
+            "price": new_item.price,
+            "notes": new_item.notes,
+            "description": new_item.description,
+            "condition": new_item.condition,
+            "hidden": new_item.hidden,
+            "image": new_item.image
+        }
+        
+        return jsonify(item_data), 201
         
     except Exception as e:
         return jsonify({"error": f"Error creating item: {str(e)}"}), 500
