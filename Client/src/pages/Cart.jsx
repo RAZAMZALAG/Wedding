@@ -31,6 +31,9 @@ const Cart = () => {
   const [cartItems, setCartItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
+  
+  // Calculate total price
+  const totalPrice = cartItems.reduce((sum, item) => sum + item.item_total, 0);
   const { setErrorMessage, refreshCartCount, openDialog, setCartCount } =
     useShared(); // <-- add setCartCount
   const navigate = useNavigate();
@@ -210,7 +213,7 @@ const Cart = () => {
                       }}
                     >
                       <ItemImage
-                        item={item}
+                        item={item.item}
                         maxHeight={200}
                         width={151}
                         sx={{
@@ -234,14 +237,14 @@ const Cart = () => {
                             variant="h5"
                             sx={{ mb: 1 }}
                           >
-                            {t(`items.${item.name}`, { defaultValue: item.name })}
+                            {t(`items.${item.item.name}`, { defaultValue: item.item.name })}
                           </Typography>
                           <Typography
                             sx={{ direction: "ltr", mb: 1 }}
                             variant="body2"
                             color="text.secondary"
                           >
-                            {t("cart_unit_price", { price: item.price })}
+                            {t("cart_unit_price", { price: item.item.price })}
                           </Typography>
                           <Box
                             sx={{
@@ -264,7 +267,7 @@ const Cart = () => {
                               </Typography>
                               <IconButton
                                 onClick={() => increaseAmount(item.id)}
-                                disabled={item.amount === item.total_amount}
+                                disabled={item.amount === item.item.total_amount}
                                 size="small"
                               >
                                 <AddIcon />
@@ -297,6 +300,9 @@ const Cart = () => {
               >
                 <Typography variant="h6">
                   {t("cart_total", { count: cartItems.length })}
+                </Typography>
+                <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                  {t("cart_total_price", { price: totalPrice.toFixed(2) })}
                 </Typography>
                 <Button
                   variant="contained"

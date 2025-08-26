@@ -60,6 +60,11 @@ def create_app():
 
     # Static files serving (for post build environment)
 
+    @app.route('/catalog/<filename>')
+    def serve_catalog_image(filename):
+        catalog_dir = os.path.join(os.path.dirname(__file__), 'catalog')
+        return send_from_directory(catalog_dir, filename)
+
     @app.route('/', methods=['GET'])
     def serve_static():
         return send_from_directory(app.static_folder, 'index.html')

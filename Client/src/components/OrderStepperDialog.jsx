@@ -85,7 +85,7 @@ const OrderStepperDialog = ({
     const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1; // +1 to include both start and end days
     
     return items.reduce((total, item) => {
-      return total + (item.price * item.amount * daysDiff);
+      return total + (item.item.price * item.amount * daysDiff);
     }, 0);
   };
 
@@ -249,7 +249,7 @@ const OrderStepperDialog = ({
                               <TableRow key={index}>
                                 <TableCell>
                                   <Typography variant="body2" fontWeight="medium">
-                                    {item.name}
+                                    {item.item.name}
                                   </Typography>
                                 </TableCell>
                                 <TableCell align="center">
@@ -259,12 +259,12 @@ const OrderStepperDialog = ({
                                 </TableCell>
                                 <TableCell align="right">
                                   <Typography variant="body2">
-                                    ₪{item.price}/יום
+                                    ₪{item.item.price}/יום
                                   </Typography>
                                 </TableCell>
                                 <TableCell align="right">
                                   <Typography variant="body2" fontWeight="medium">
-                                    ₪{item.price * item.amount * days}
+                                    ₪{item.item.price * item.amount * days}
                                   </Typography>
                                 </TableCell>
                               </TableRow>
