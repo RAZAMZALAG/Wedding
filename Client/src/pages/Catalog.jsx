@@ -35,6 +35,7 @@ import {
   EP_ADD_ITEM,
   EP_EDIT_ITEM,
   EP_DELETE_ITEM,
+  EP_CATEGORIES,
 } from "../constants.js";
 import { useShared } from "../context/SharedContext.jsx";
 import { useAuth } from "../context/AuthContext.jsx";

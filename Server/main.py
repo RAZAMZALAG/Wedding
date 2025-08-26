@@ -1,12 +1,12 @@
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
-from extensions import db, jwt
+from extensions import mongo, jwt
 from auth import auth_bp
 from users import user_bp
 from items import item_bp
 from bookings import booking_bp
 from ai_assistant import ai_bp
-from models import User
+from models import User, init_db
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 from bookings import send_booking_return_reminders
@@ -20,10 +20,17 @@ def create_app():
     CORS(app)
     app.config.from_prefixed_env()
     env = os.getenv("ENV")
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DEV_DB_URI") if env != "PROD" else os.getenv("PROD_DB_URI")
+    
+    # JWT Configuration
+    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-for-development')
+    app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'your-jwt-secret-key')
+    
+    # MongoDB Configuration
+    mongo_uri = os.getenv("MONGO_URI") or os.getenv("DEV_MONGO_URI") if env != "PROD" else os.getenv("PROD_MONGO_URI")
+    app.config["MONGO_URI"] = mongo_uri or "mongodb://localhost:27017/wedding_planner"
 
     # init extensions
-    db.init_app(app)
+    mongo.init_app(app)
     jwt.init_app(app)
 
     # API requests
@@ -37,7 +44,7 @@ def create_app():
     @jwt.user_lookup_loader
     def user_lookup_callback(jwt_headers, jwt_data):
         identity = jwt_data['sub']
-        return User.query.filter_by(email=identity).one_or_none()
+        return User.get_user_by_email(identity)
 
     @jwt.expired_token_loader
     def expired_token_callback(jwt_header, jwt_data):
@@ -72,9 +79,9 @@ def create_app():
     scheduler.add_job(func=scheduled_send_booking_return_reminders, trigger='cron', hour=9)
     scheduler.start()
     
-    # Initialize database tables
+    # Initialize database and collections
     with app.app_context():
-        db.create_all()
+        init_db()
         # Only send reminders after database is initialized
         try:
             send_booking_return_reminders()

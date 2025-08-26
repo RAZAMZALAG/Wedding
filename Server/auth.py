@@ -8,6 +8,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email_utils import send_verification_email  
 import uuid
+import os
 
 
 auth_bp = Blueprint("auth", __name__)
@@ -50,7 +51,7 @@ def register_user():
         return jsonify({"error": "USER_EXISTS"}), 400
 
     new_user = User(
-        id=str(uuid.uuid4()),
+        _id=str(uuid.uuid4()),
         first_name=first_name,
         last_name=last_name,
         phone_number=phone,
@@ -95,6 +96,7 @@ def verify_email():
         return jsonify({"error": "USER_NOT_FOUND"}), 404
 
     if user.verified:
+        client_url = os.getenv("CLIENT_URL", "http://localhost:5173")
         return render_template_string("""
         <html dir="rtl" lang="he">
           <head>
@@ -103,15 +105,16 @@ def verify_email():
           </head>
           <body style="text-align:center; font-family:Arial; margin-top:50px;">
             <h2>✅ כתובת הדוא"ל שלך כבר אומתה בעבר.</h2>
-            <p>באפשרותך <a href="/login">להתחבר</a> לאתר Wedding Dreams 💒</p>
+            <p>באפשרותך <a href="{{ client_url }}/login">להתחבר</a> לאתר Wedding Dreams 💒</p>
           </body>
         </html>
-        """)
+        """, client_url=client_url)
 
     # עדכון סטטוס האימות ושמירה
     user.verified = True
     user.save()
 
+    client_url = os.getenv("CLIENT_URL", "http://localhost:5173")
     return render_template_string("""
     <html dir="rtl" lang="he">
       <head>
@@ -120,10 +123,10 @@ def verify_email():
       </head>
       <body style="text-align:center; font-family:Arial; margin-top:50px;">
         <h2>✅ האימות הושלם בהצלחה!</h2>
-        <p>כעת באפשרותך <a href="/login">להתחבר</a> לאתר Wedding Dreams 💒</p>
+        <p>כעת באפשרותך <a href="{{ client_url }}/login">להתחבר</a> לאתר Wedding Dreams 💒</p>
       </body>
     </html>
-    """)
+    """, client_url=client_url)
 
 
 

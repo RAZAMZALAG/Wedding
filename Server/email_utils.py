@@ -27,7 +27,7 @@ def send_email(to_email, subject, body):
 
 def send_verification_email(to_email, name, token):
     subject = "אימות כתובת הדוא\"ל שלך באתר Wedding Dreams"
-    port = os.getenv("CLIENT_PORT")
+    port = os.getenv("CLIENT_PORT", "5000")
     verification_link = f"http://localhost:{port}/api/auth/verify-email?token={token}"
     plain_text = f"""שלום {name} 👋
 

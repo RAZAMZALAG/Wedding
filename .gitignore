@@ -1,17 +1,34 @@
+# Python
 Server/env
 Server/__pycache__
 Server/instance
 Server/.env
 Server/dist
+__pycache__/
+*.pyc
+*.pyo
 
+# Node.js
 Client/node_modules
 Client/public
 Client/src/.env
 Client/src/.env.production
 
-db
+# Environment files
 .env
+.env.local
+.env.production
+
+# IDE
 .idea/
-__pycache__/
-*.pyc
-*.pyo
+.vscode/
+
+# Docker
+db/
+
+# Old files (backup files)
+*_old.py
+*_mongo.py
+
+# MongoDB data
+mongodb_data/

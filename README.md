@@ -104,11 +104,13 @@ docker compose up --build
 
 #### Database Setup
 ```bash
-# Create PostgreSQL database
-createdb wedding_planner
+# MongoDB will start automatically with Docker Compose
+# No manual database creation needed
 
-# Or using psql
-psql -U postgres -c "CREATE DATABASE wedding_planner;"
+# Or start MongoDB manually:
+mongosh
+# In MongoDB shell:
+use wedding_planner
 ```
 
 #### Backend Setup
@@ -130,8 +132,8 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your database settings
 
-# Initialize database
-python -c "from main import create_app; from extensions import db; app = create_app(); app.app_context().push(); db.create_all()"
+# Initialize database and create sample data
+python migrate_to_mongo.py
 
 # Start server
 python main.py
@@ -153,16 +155,15 @@ npm run dev
 ### Environment Variables (.env file)
 
 ```env
-# Database Configuration
-POSTGRES_USER=user
-POSTGRES_PASSWORD=password
-POSTGRES_DB=wedding_planner
-POSTGRES_PORT=5432
+# MongoDB Configuration
+MONGO_ROOT_USERNAME=admin
+MONGO_ROOT_PASSWORD=admin123
+MONGO_DATABASE=wedding_planner
 
 # Application
 CLIENT_PORT=5000
 ENV=DEV
-DEV_DB_URI=postgresql://user:password@localhost:5432/wedding_planner
+DEV_MONGO_URI=mongodb://admin:admin123@localhost:27017/wedding_planner?authSource=admin
 
 # Security
 JWT_SECRET_KEY=your-super-secret-jwt-key-here
@@ -198,14 +199,14 @@ GEMINI_API_KEY=your-google-gemini-api-key
 
 ### Backend
 - **Flask** - Python web framework
-- **SQLAlchemy** - Database ORM
+- **PyMongo** - MongoDB driver for Python  
 - **JWT** - Authentication and authorization
 - **Flask-Mail** - Email notifications
 - **Google Gemini AI** - AI assistant integration
 
 ### Database
-- **PostgreSQL** - Primary database
-- **Docker PostgreSQL** - Containerized database
+- **MongoDB** - Primary NoSQL database
+- **Docker MongoDB** - Containerized database
 
 ### DevOps
 - **Docker Compose** - Multi-container orchestration
@@ -295,25 +296,27 @@ npm run dev
 - Close other development tools while running
 - Use SSD storage for better database performance
 
-## 🚢 Deployment
+## � Project Structure
 
-### Production Deployment
-For production deployment:
-
-1. Update environment variables for production
-2. Use production database credentials
-3. Set up proper email configuration
-4. Configure HTTPS and domain
-5. Set up automated backups
-
-### Environment Setup
-```bash
-# Production environment
-ENV=PROD
-PROD_DB_URI=postgresql://prod_user:prod_pass@prod_host:5432/wedding_planner
-
-# Security
-JWT_SECRET_KEY=super-long-random-production-key
+```
+├── Client/                 # React Frontend
+│   ├── src/
+│   │   ├── components/     # Reusable UI components
+│   │   ├── pages/         # Application pages
+│   │   ├── context/       # React context providers
+│   │   └── styles/        # Theme and styling
+│   └── package.json
+├── Server/                 # Flask Backend
+│   ├── models.py          # MongoDB data models
+│   ├── auth.py           # Authentication routes
+│   ├── users.py          # User management
+│   ├── items.py          # Wedding items catalog
+│   ├── bookings.py       # Rental system
+│   ├── ai_assistant.py   # AI chatbot integration
+│   └── requirements.txt
+├── docker-compose.yaml    # Multi-container setup
+├── Dockerfile            # Server container config
+└── README.md
 ```
 
 ## 🤝 Contributing

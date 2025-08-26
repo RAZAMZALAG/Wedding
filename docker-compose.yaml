@@ -8,27 +8,30 @@ services:
       - ${CLIENT_PORT}:${CLIENT_PORT}
     networks:
       - app-network
-    container_name: server
+    container_name: wedding-server
     restart: always
-    image: server
     depends_on:
-      - postgres
-
-  postgres: # PostgresSQL DB
-    image: postgres:latest
-    container_name: postgres
+      - mongodb
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      - MONGO_URI=mongodb://mongodb:27017/wedding_planner
+      - SECRET_KEY=your-secret-key-for-development
+      - JWT_SECRET_KEY=your-jwt-secret-key
+      - CLIENT_URL=http://localhost:5173
+
+  mongodb: # MongoDB Database
+    image: mongo:latest
+    container_name: mongodb
     restart: always
+    ports:
+      - "27017:27017"
     volumes:
-      - ./db:/data/db:rw
-      - ./Database/01_db.sql:/docker-entrypoint-initdb.d/01_db.sql
-      - ./Database/02_data.sql:/docker-entrypoint-initdb.d/02_data.sql
+      - mongodb_data:/data/db
     networks:
       - app-network
 
+volumes:
+  mongodb_data:
+    driver: local
 
 networks:
   app-network:
