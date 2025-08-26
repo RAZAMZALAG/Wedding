@@ -4,8 +4,53 @@ from models import User
 from schemas import ManagedUserSchema, UserIdFileSchema
 from validation import is_valid_permission
 import base64
+from bson import ObjectId
+import datetime
+import json
 
 user_bp = Blueprint("users", __name__)
+
+
+def convert_objectid_to_str(obj):
+    """Convert ObjectId to string recursively"""
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    elif isinstance(obj, dict):
+        return {key: convert_objectid_to_str(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_objectid_to_str(item) for item in obj]
+    elif isinstance(obj, datetime.datetime):
+        return obj.isoformat()
+    return obj
+
+
+def serialize_user_data(user_data):
+    """Helper function to serialize user data safely"""
+    # Handle different field formats directly from the raw data
+    first_name = user_data.get('first_name') or user_data.get('name') or ''
+    last_name = user_data.get('last_name') or ''
+    
+    # Convert ObjectId to string if needed
+    user_id = user_data.get('_id')
+    if isinstance(user_id, ObjectId):
+        user_id = str(user_id)
+    elif user_id is None:
+        user_id = ''
+    else:
+        user_id = str(user_id)
+    
+    return {
+        "id": user_id,
+        "first_name": first_name,
+        "last_name": last_name,
+        "email": str(user_data.get('email') or ''),
+        "phone_number": str(user_data.get('phone_number') or ''),
+        "location": str(user_data.get('location') or ''),
+        "permission": int(user_data.get('permission') or 1),
+        "blocked": bool(user_data.get('blocked')),
+        "verified": bool(user_data.get('verified')),
+        "agreement": bool(user_data.get('agreement'))
+    }
 
 
 @user_bp.get('/')
@@ -47,35 +92,91 @@ def get_all_users():
             users_list = list(users.skip(skip).limit(per_page))
             total_count = User.get_collection().count_documents(filter_query)
             
-            # Convert to User objects and serialize
-            user_objects = [User(**user_data) for user_data in users_list]
+            # Serialize users data
             result = []
-            
-            for user in user_objects:
-                user_data = {
-                    "_id": user._id,
-                    "first_name": user.first_name,
-                    "last_name": user.last_name,
-                    "email": user.email,
-                    "phone_number": user.phone_number,
-                    "location": user.location,
-                    "permission": user.permission,
-                    "blocked": user.blocked,
-                    "verified": user.verified,
-                    "agreement": user.agreement
-                }
-                result.append(user_data)
+            for user_data in users_list:
+                try:
+                    user_dict = serialize_user_data(user_data)
+                    result.append(user_dict)
+                except Exception as user_error:
+                    # Skip problematic users but continue processing
+                    print(f"Skipping user due to error: {str(user_error)}")
+                    continue
 
-            return jsonify({
+            response_data = {
                 "users": result,
-                "total": total_count,
-                "pages": (total_count + per_page - 1) // per_page,
-                "current_page": page,
-                "per_page": per_page
-            }), 200
+                "meta": {
+                    "total_users": int(total_count),
+                    "total_pages": int((total_count + per_page - 1) // per_page),
+                    "current_page": int(page),
+                    "per_page": int(per_page)
+                }
+            }
+            
+            # Convert ObjectIds to strings before returning
+            response_data = convert_objectid_to_str(response_data)
+            
+            return jsonify(response_data), 200
             
         except Exception as e:
+            import traceback
+            print(f"Error in get_all_users: {str(e)}")
+            print(f"Traceback: {traceback.format_exc()}")
             return jsonify({"error": f"Error retrieving users: {str(e)}"}), 500
+    else:
+        return jsonify({"error": "FORBIDDEN"}), 403
+
+
+@user_bp.route('/update/<user_id>', methods=['PUT', 'POST'])
+@jwt_required()
+def update_user(user_id):
+    """Update user information"""
+    claims = get_jwt()
+    if int(claims.get("permission", 0)) > 2:
+        try:
+            # Get user data from request
+            data = request.get_json()
+            if not data:
+                return jsonify({"error": "No data provided"}), 400
+            
+            # Find user in database
+            collection = User.get_collection()
+            user = collection.find_one({"_id": user_id})
+            
+            if not user:
+                return jsonify({"error": "USER_NOT_FOUND"}), 404
+            
+            # Update user fields
+            update_data = {}
+            if 'first_name' in data:
+                update_data['first_name'] = data['first_name']
+            if 'last_name' in data:
+                update_data['last_name'] = data['last_name']
+            if 'email' in data:
+                update_data['email'] = data['email']
+            if 'phone_number' in data:
+                update_data['phone_number'] = data['phone_number']
+            if 'location' in data:
+                update_data['location'] = data['location']
+            if 'permission' in data:
+                update_data['permission'] = int(data['permission'])
+            
+            # Update in database
+            result = collection.update_one(
+                {"_id": user_id},
+                {"$set": update_data}
+            )
+            
+            if result.modified_count > 0:
+                return jsonify({"message": "User updated successfully"}), 200
+            else:
+                return jsonify({"message": "No changes made"}), 200
+                
+        except Exception as e:
+            import traceback
+            print(f"Error updating user: {str(e)}")
+            print(f"Traceback: {traceback.format_exc()}")
+            return jsonify({"error": f"Error updating user: {str(e)}"}), 500
     else:
         return jsonify({"error": "FORBIDDEN"}), 403
 
