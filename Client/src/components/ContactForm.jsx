@@ -40,6 +40,7 @@ const ContactForm = () => {
         {t("contact_form_title")}
       </Typography>
       <TextField
+        id="contact-name"
         label={t("contact_form_name")}
         name="name"
         value={formData.name}
@@ -49,6 +50,7 @@ const ContactForm = () => {
         required
       />
       <TextField
+        id="contact-email"
         label={t("contact_form_email")}
         name="email"
         type="email"
@@ -59,6 +61,7 @@ const ContactForm = () => {
         required
       />
       <TextField
+        id="contact-message"
         label={t("contact_form_message")}
         name="message"
         value={formData.message}

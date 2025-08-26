@@ -28,8 +28,11 @@ def count_booking_units(start_date, end_date):
 def get_bookings():
     """Get bookings with filtering and pagination"""
     claims = get_jwt()
+    print(f"DEBUG: get_bookings called, claims: {claims}")
+    print(f"DEBUG: permission: {claims.get('permission', 0)}")
 
     if int(claims.get("permission", 0)) > 1:
+        print("DEBUG: Admin user - getting all bookings")
         try:
             # Get query parameters with default values
             page = request.args.get("page", default=1, type=int)
@@ -117,16 +120,19 @@ def get_bookings():
 
             return jsonify({
                 "bookings": paginated_orders,
-                "total": total_count,
-                "pages": (total_count + per_page - 1) // per_page,
-                "current_page": page,
-                "per_page": per_page
+                "meta": {
+                    "total_bookings": total_count,
+                    "total_pages": (total_count + per_page - 1) // per_page,
+                    "current_page": page,
+                    "per_page": per_page
+                }
             }), 200
 
         except Exception as e:
             return jsonify({"error": f"Error getting bookings: {str(e)}"}), 500
     else:
         # Regular user - get their own bookings
+        print(f"DEBUG: User permission too low: {claims.get('permission', 0)}")
         try:
             user_orders = Order.get_user_orders(current_user._id)
             orders_data = []

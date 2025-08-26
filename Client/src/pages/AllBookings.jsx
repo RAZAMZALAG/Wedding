@@ -59,9 +59,9 @@ const tableHeadings = [
 ];
 
 const typeMapping = {
-  0: "SCHEDULED",
-  1: "EXISTING",
-  2: "DONE",
+  0: "all",  // Show all bookings
+  1: "PENDING",
+  2: "APPROVED",
 };
 
 const AllBookings = () => {
@@ -453,20 +453,20 @@ const AllBookings = () => {
                   </TableCell>
                   {/* Display compact list of items */}
                   <TableCell>
-                    {booking.items.map((item, itemIndex) => (
+                    {(booking.cart_items || []).map((cartItem, itemIndex) => (
                       <div key={itemIndex}>
                         <span>
                           <span
-                            onClick={() => navigate(`/item/${item.id}`)}
+                            onClick={() => navigate(`/item/${cartItem.item.id}`)}
                             style={{ cursor: "pointer" }}
                           >
-                            {t(`items.${item.name}`, {
-                              defaultValue: item.name,
+                            {t(`items.${cartItem.item.name}`, {
+                              defaultValue: cartItem.item.name,
                             })}
                           </span>{" "}
-                          (x{item.amount}) {item.price} ₪
+                          (x{cartItem.amount}) {cartItem.item.price} ₪
                         </span>
-                        {itemIndex < booking.items.length - 1 && <br />}
+                        {itemIndex < (booking.cart_items || []).length - 1 && <br />}
                       </div>
                     ))}
                   </TableCell>
