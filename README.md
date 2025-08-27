@@ -1,45 +1,76 @@
-# Wedding Planner - מערכת ניהול השכרות לאירועים
+# Wedding Planner - מערכת ניהול השכרות לאירועים 💍
 
-## תיאור הפרויקט
+מערכת מקצועית לניהול השכרות ציוד לאירועים עם עוזר AI, ניהול לקוחות וזמינות ציוד.
 
-Wedding Planner הוא מערכת מקצועית לניהול השכרות ציוד לאירועים הכוללת:
-- קטלוג ציוד אירועים מקיף
-- מערכת השכרות מתקדמת עם ניהול תאריכים
-- ניהול לקוחות וציוד
-- עוזר בינה מלאכותית לייעוץ אירועים
-- מערכת מעקב השכרות וזמינות
+## 🚀 איך להריץ את הפרויקט
 
-## קטגוריות ציוד
+### אופציה 1: הרצה עם Docker (מומלץ)
 
-- 🍽️ כלי הגשה וחרסינה
-- � כיסאות ושולחנות
-- ✨ אבזרי נוי ועיצוב
-- � ציוד הגברה
-- 💡 ציוד תאורה
-- � ציוד בישול וחימום
-- 🎪 ציוד עזר לאירועים
-- 💌 הזמנות ומזכרות
-- 💎 תכשיטים ואביזרים
-- 🚗 רכב וקישוט
+```bash
+# 1. שכפול הפרויקט
+git clone https://github.com/RAZAMZALAG/Wedding.git
+cd Wedding
 
-## טכנולוגיות
+# 2. הפעלת המערכת
+docker compose up --build
 
-### Frontend
-- React 18
-- Material-UI
-- Vite
-- i18n (תמיכה בעברית, אנגלית, ערבית ורוסית)
+# גישה: http://localhost:5000
+# עצירה: docker compose down
+```
 
-### Backend
-- Flask (Python)
-- SQLAlchemy
-- PostgreSQL
-- JWT Authentication
-- Google Gemini AI
+### אופציה 2: הרצה מקומית (כולל טעינת DB)
 
-### DevOps
-- Docker & Docker Compose
-- Nginx
+**התקנה חד פעמית:**
+```bash
+# 1. התקן דרישות: Python 3.13+, Node.js 18+, MongoDB
+winget install MongoDB.Server  # Windows
+winget install Python.Python.3.13
+winget install OpenJS.NodeJS
+
+# 2. שכפול והתקנה
+git clone https://github.com/RAZAMZALAG/Wedding.git
+cd Wedding
+
+# 3. סביבה וירטואלית
+python -m venv venv
+.\venv\Scripts\Activate.ps1  # Windows
+pip install -r Server/requirements.txt
+
+# 4. התקנת frontend
+cd Client
+npm install
+cd ..
+```
+
+**הפעלה יומיומית:**
+```bash
+# 1. הפעל MongoDB
+net start MongoDB  # Windows
+
+# 2. טעינת DB (רק פעם ראשונה או לאיפוס)
+cd Server
+python migrate_to_mongo.py
+
+# 3. הפעל שרת (טרמינל 1)
+python main.py
+
+# 4. הפעל frontend (טרמינל 2)
+cd ../Client
+npm run dev
+
+# גישה: http://localhost:5173
+```
+
+## 👤 כניסה למערכת
+
+| משתמש | סיסמה | תפקיד |
+|-------|--------|--------|
+| admin@email.com | password | מנהל |
+| user@email.com | password | משתמש |
+
+---
+
+**טכנולוגיות:** React, Flask, MongoDB, AI Assistant
 
 # Wedding Planner - Event Equipment Rental System 💍✨
 
