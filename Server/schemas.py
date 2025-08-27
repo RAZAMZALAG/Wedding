@@ -1,4 +1,8 @@
 from marshmallow import fields, Schema
+from logger_config import get_logger
+
+# Setup logger for schema operations
+logger = get_logger(__name__)
 
 
 class UserSchema(Schema):
@@ -38,6 +42,11 @@ class Base64BytesField(fields.Field):
         if not value:
             return None
         if not isinstance(value, (str, bytes, bytearray)):
+            logger.warning("Invalid data type for Base64 serialization", extra={
+                "expected_type": "bytes/str",
+                "actual_type": type(value).__name__,
+                "field_name": attr
+            })
             raise ValidationError('Expected bytes for Base64BytesField')
         return base64.b64encode(value).decode('utf-8')
 
@@ -45,10 +54,19 @@ class Base64BytesField(fields.Field):
         if not value:
             return None
         if not isinstance(value, str):
+            logger.warning("Invalid data type for Base64 deserialization", extra={
+                "expected_type": "str",
+                "actual_type": type(value).__name__,
+                "field_name": attr
+            })
             raise ValidationError('Expected string for Base64BytesField')
         try:
             return base64.b64decode(value)
         except Exception as e:
+            logger.error("Base64 decoding failed", extra={
+                "field_name": attr,
+                "value_length": len(value) if isinstance(value, str) else 0
+            }, exc_info=True)
             raise ValidationError('Invalid base64 string') from e
 
 

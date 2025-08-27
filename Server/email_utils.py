@@ -1,11 +1,14 @@
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from logger_config import get_logger
 import os
 
 # Private information
 SENDER_EMAIL = "shola.project.hadar@gmail.com"
 SENDER_PASSWORD = "rzlo xsmn orxb atuk"
+
+logger = get_logger(__name__)
 
 def send_email(to_email, subject, body):
     message = MIMEMultipart()
@@ -20,9 +23,9 @@ def send_email(to_email, subject, body):
         server.login(SENDER_EMAIL, SENDER_PASSWORD)
         server.sendmail(SENDER_EMAIL, to_email, message.as_string())
         server.quit()
-        print(f"✅ Email sent to {to_email}")
+        logger.info(f"Email sent successfully to {to_email}")
     except Exception as e:
-        print(f"❌ Failed to send email to {to_email}: {str(e)}")
+        logger.error(f"Failed to send email to {to_email}: {str(e)}", exc_info=True)
 
 
 def send_verification_email(to_email, name, token):
@@ -84,9 +87,9 @@ def send_verification_email(to_email, name, token):
         server.login(SENDER_EMAIL, SENDER_PASSWORD)
         server.send_message(message)
         server.quit()
-        print(f"✅ Verification email sent to {to_email}")
+        logger.info(f"Verification email sent successfully to {to_email}")
     except Exception as e:
-        print(f"❌ Failed to send verification email to {to_email}: {e}")
+        logger.error(f"Failed to send verification email to {to_email}: {e}", exc_info=True)
 
 def send_booking_pending_email(to_email, name, items, start_date, end_date):
     subject = "ההזמנה שלך לחתונה בבדיקה 💎"

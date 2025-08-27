@@ -3,12 +3,27 @@ from flask_jwt_extended import jwt_required, get_jwt
 from models import User
 from schemas import ManagedUserSchema, UserIdFileSchema
 from validation import is_valid_permission
+from logger_config import get_logger, log_database_operation, log_user_action, PerformanceMonitor
 import base64
 from bson import ObjectId
 import datetime
 import json
+import traceback
 
 user_bp = Blueprint("users", __name__)
+logger = get_logger(__name__)
+
+
+class CustomJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder for handling ObjectId and datetime objects"""
+    def default(self, obj):
+        if isinstance(obj, ObjectId):
+            return str(obj)
+        elif isinstance(obj, datetime.datetime):
+            return obj.isoformat()
+        elif isinstance(obj, datetime.date):
+            return obj.isoformat()
+        return super().default(obj)
 
 
 def convert_objectid_to_str(obj):
@@ -92,6 +107,14 @@ def get_all_users():
             users_list = list(users.skip(skip).limit(per_page))
             total_count = User.get_collection().count_documents(filter_query)
             
+            log_database_operation("query", "users", {
+                "filter": filter_query,
+                "sort": order_by,
+                "page": page,
+                "per_page": per_page,
+                "total_count": total_count
+            })
+            
             # Serialize users data
             result = []
             for user_data in users_list:
@@ -100,7 +123,8 @@ def get_all_users():
                     result.append(user_dict)
                 except Exception as user_error:
                     # Skip problematic users but continue processing
-                    print(f"Skipping user due to error: {str(user_error)}")
+                    logger.warning(f"Skipping user due to serialization error: {str(user_error)}", 
+                                 extra={'extra_data': {'user_id': str(user_data.get('_id', 'unknown'))}})
                     continue
 
             response_data = {
@@ -116,12 +140,13 @@ def get_all_users():
             # Convert ObjectIds to strings before returning
             response_data = convert_objectid_to_str(response_data)
             
+            logger.info(f"Retrieved {len(result)} users for page {page}")
             return jsonify(response_data), 200
             
         except Exception as e:
-            import traceback
-            print(f"Error in get_all_users: {str(e)}")
-            print(f"Traceback: {traceback.format_exc()}")
+            logger.error("Error in get_all_users", exc_info=True, extra={'extra_data': {
+                'page': page, 'per_page': per_page, 'order_by': order_by, 'blocked': blocked
+            }})
             return jsonify({"error": f"Error retrieving users: {str(e)}"}), 500
     else:
         return jsonify({"error": "FORBIDDEN"}), 403
@@ -168,14 +193,26 @@ def update_user(user_id):
             )
             
             if result.modified_count > 0:
+                log_database_operation("update", "users", {
+                    "user_id": str(user_id),
+                    "updated_fields": list(update_data.keys()),
+                    "modified_count": result.modified_count
+                })
+                log_user_action("user_updated", details={
+                    "target_user_id": str(user_id),
+                    "updated_fields": list(update_data.keys())
+                })
+                logger.info(f"User {user_id} updated successfully")
                 return jsonify({"message": "User updated successfully"}), 200
             else:
+                logger.info(f"No changes made to user {user_id}")
                 return jsonify({"message": "No changes made"}), 200
                 
         except Exception as e:
-            import traceback
-            print(f"Error updating user: {str(e)}")
-            print(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Error updating user {user_id}", exc_info=True, extra={'extra_data': {
+                'user_id': str(user_id),
+                'update_data': update_data if 'update_data' in locals() else None
+            }})
             return jsonify({"error": f"Error updating user: {str(e)}"}), 500
     else:
         return jsonify({"error": "FORBIDDEN"}), 403
@@ -216,6 +253,7 @@ def block_user(user_id):
             user = collection.find_one({"_id": user_id})
             
             if not user:
+                logger.warning(f"Attempted to block non-existent user: {user_id}")
                 return jsonify({"error": "USER_NOT_FOUND"}), 404
 
             # Update user to blocked
@@ -225,14 +263,23 @@ def block_user(user_id):
             )
             
             if result.modified_count > 0:
+                log_database_operation("update", "users", {
+                    "user_id": str(user_id),
+                    "action": "block",
+                    "modified_count": result.modified_count
+                })
+                log_user_action("user_blocked", details={
+                    "target_user_id": str(user_id),
+                    "target_user_email": user.get('email', 'unknown')
+                })
+                logger.info(f"User {user_id} blocked successfully")
                 return jsonify({"message": "USER_BLOCKED"}), 200
             else:
+                logger.info(f"User {user_id} was already blocked")
                 return jsonify({"message": "User was already blocked"}), 200
             
         except Exception as e:
-            import traceback
-            print(f"Error blocking user: {str(e)}")
-            print(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Error blocking user {user_id}", exc_info=True)
             return jsonify({"error": f"Error blocking user: {str(e)}"}), 500
     else:
         return jsonify({"error": "FORBIDDEN"}), 403
@@ -249,6 +296,7 @@ def unblock_user(user_id):
             user = collection.find_one({"_id": user_id})
             
             if not user:
+                logger.warning(f"Attempted to unblock non-existent user: {user_id}")
                 return jsonify({"error": "USER_NOT_FOUND"}), 404
 
             # Update user to unblocked
@@ -258,14 +306,23 @@ def unblock_user(user_id):
             )
             
             if result.modified_count > 0:
+                log_database_operation("update", "users", {
+                    "user_id": str(user_id),
+                    "action": "unblock",
+                    "modified_count": result.modified_count
+                })
+                log_user_action("user_unblocked", details={
+                    "target_user_id": str(user_id),
+                    "target_user_email": user.get('email', 'unknown')
+                })
+                logger.info(f"User {user_id} unblocked successfully")
                 return jsonify({"message": "USER_UNBLOCKED"}), 200
             else:
+                logger.info(f"User {user_id} was already unblocked")
                 return jsonify({"message": "User was already unblocked"}), 200
             
         except Exception as e:
-            import traceback
-            print(f"Error unblocking user: {str(e)}")
-            print(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Error unblocking user {user_id}", exc_info=True)
             return jsonify({"error": f"Error unblocking user: {str(e)}"}), 500
     else:
         return jsonify({"error": "FORBIDDEN"}), 403
@@ -394,14 +451,24 @@ def delete_blocked_users():
                     deleted_count += 1
                     
                 except Exception as user_error:
-                    print(f"Error deleting user {user._id}: {str(user_error)}")
+                    logger.error(f"Error deleting user {user._id}", exc_info=True, extra={'extra_data': {
+                        'user_id': str(user._id),
+                        'user_email': user.email if hasattr(user, 'email') else 'unknown'
+                    }})
                     continue
+            
+            log_user_action("bulk_delete_blocked_users", details={
+                "deleted_count": deleted_count,
+                "total_blocked": len(blocked_users)
+            })
+            logger.info(f"Deleted {deleted_count} blocked users out of {len(blocked_users)} total")
             
             return jsonify({
                 "message": f"DELETED_{deleted_count}_BLOCKED_USERS"
             }), 200
             
         except Exception as e:
+            logger.error("Error in bulk delete blocked users", exc_info=True)
             return jsonify({"error": f"Error deleting blocked users: {str(e)}"}), 500
     else:
         return jsonify({"error": "FORBIDDEN"}), 403

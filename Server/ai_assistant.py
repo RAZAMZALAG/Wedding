@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify
+from logger_config import get_logger
 import os
 import google.generativeai as genai
 from models import Item, Category
@@ -6,6 +7,7 @@ import re
 from urllib.parse import quote
 
 ai_bp = Blueprint("ai", __name__)
+logger = get_logger(__name__)
 
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 model = genai.GenerativeModel("gemini-1.5-flash")
@@ -65,9 +67,19 @@ def ask_ai():
     try:
         response = model.generate_content([system_prompt, user_message])
         gemini_reply = response.text
+        
+        logger.info(f"AI assistant query processed", extra={'extra_data': {
+            'language': lang,
+            'user_message_length': len(user_message),
+            'response_length': len(gemini_reply)
+        }})
+        
         return jsonify({"reply": gemini_reply})
     except Exception as e:
-        print(f"Gemini API error: {e}")
+        logger.error(f"Gemini API error in ask endpoint", exc_info=True, extra={'extra_data': {
+            'language': lang,
+            'user_message_length': len(user_message) if user_message else 0
+        }})
         return jsonify({"error": "Gemini API error"}), 400
 
 @ai_bp.route("/ask-image", methods=["POST"])
@@ -115,7 +127,20 @@ def ask_image():
         response = model.generate_content(content)
         gemini_reply = response.text
         gemini_reply = linkify_item_names(gemini_reply, item_names)
+        
+        logger.info(f"AI assistant image query processed", extra={'extra_data': {
+            'language': lang,
+            'has_user_text': bool(user_text.strip()),
+            'user_text_length': len(user_text) if user_text else 0,
+            'image_mimetype': file.mimetype,
+            'response_length': len(gemini_reply)
+        }})
+        
         return jsonify({"reply": gemini_reply})
     except Exception as e:
-        print(f"Gemini API error: {e}")
+        logger.error(f"Gemini API error in ask-image endpoint", exc_info=True, extra={'extra_data': {
+            'language': lang,
+            'has_user_text': bool(user_text.strip()),
+            'image_mimetype': file.mimetype if file else None
+        }})
         return jsonify({"error": "Gemini API error"}), 400

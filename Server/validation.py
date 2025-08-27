@@ -1,7 +1,9 @@
 from flask import jsonify
+from logger_config import get_logger
 import re
 
-# sapir for commit
+logger = get_logger(__name__)
+
 def is_valid_username(username):
     # Does not begin and end with blank, Only English and Hebrew letters, Between 2 and 15 letters
     pattern = r"^(?! )[a-zA-Zא-ת0-9_ ]{2,15}(?<! )$"
@@ -75,53 +77,71 @@ def is_valid_location(location):
 
 
 def validate_registration(first_name, last_name, phone, email, location, agreement, password):
+    logger.debug(f"Validating registration for email: {email}")
+    
     # Validate the username
     if not first_name:
+        logger.warning(f"Registration validation failed: missing first name for {email}")
         return jsonify({"error": 'FIRST_NAME_REQUIRED'}), 400
     error = is_valid_username(first_name)
     if error:
-        # Return the error message if validation failed
+        logger.warning(f"Registration validation failed: invalid first name '{first_name}' for {email}")
         return error
 
     # Validate the last name
     if not last_name:
+        logger.warning(f"Registration validation failed: missing last name for {email}")
         return jsonify({"error": 'LAST_NAME_REQUIRED'}), 400
 
     error = is_valid_username(last_name)
     if error:
+        logger.warning(f"Registration validation failed: invalid last name '{last_name}' for {email}")
         return error
 
     # validate the phone number
     if not phone:
+        logger.warning(f"Registration validation failed: missing phone for {email}")
         return jsonify({"error": 'PHONE_NUMBER_REQUIRED'}), 400
     error = is_valid_phone(phone)
     if error:
+        logger.warning(f"Registration validation failed: invalid phone '{phone}' for {email}")
         return error
 
     # validate the mail Email address
     if not email:
+        logger.warning("Registration validation failed: missing email")
         return jsonify({"error": 'EMAIL_REQUIRED'}), 400
 
     error = is_valid_email(email)
     if error:
+        logger.warning(f"Registration validation failed: invalid email format '{email}'")
         return error
 
     # validate location dropdown
     if not location:
+        logger.warning(f"Registration validation failed: missing location for {email}")
         return jsonify({"error": 'LOCATION_REQUIRED'}), 400
     error = is_valid_location(location)
     if error:
+        logger.warning(f"Registration validation failed: invalid location '{location}' for {email}")
         return error
 
     if not agreement:
+        logger.warning(f"Registration validation failed: agreement not accepted for {email}")
         return jsonify({"error": 'YOU_MUST_AGREE_TO_THE_TERMS_OF_USE'}), 400
 
     # validate password
     if not password:
+        logger.warning(f"Registration validation failed: missing password for {email}")
         return jsonify({'error': 'PASSWORD_REQUIRED'}), 400
     error = is_valid_password(password)
-    if not error:
+    if error:
+        logger.warning(f"Registration validation failed: invalid password for {email}")
         return error
+    
+    logger.info(f"Registration validation successful for {email}")
+    return None  # All validations passed
+
 
 def is_valid_permission(value):
     try:

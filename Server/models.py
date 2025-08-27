@@ -352,7 +352,11 @@ def init_db():
                 category = Category(name=category_name)
                 category.save()
         
-        print("Database initialized successfully with MongoDB")
+        from logger_config import get_logger
+        logger = get_logger(__name__)
+        logger.info("Database initialized successfully with MongoDB")
         
     except Exception as e:
-        print(f"Error initializing database: {e}")
+        from logger_config import get_logger
+        logger = get_logger(__name__)
+        logger.error("Error initializing database", exc_info=True)

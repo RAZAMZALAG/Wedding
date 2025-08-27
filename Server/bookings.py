@@ -5,8 +5,10 @@ from models import Item, Order, User, Cart
 from extensions import mongo
 from datetime import datetime, date, timedelta
 from email_utils import send_booking_pending_email, send_booking_approved_email, send_return_reminder_email, send_return_thank_you_email, send_booking_rejected_email
+from logger_config import get_logger, log_database_operation, log_user_action, log_business_event, PerformanceMonitor
 
 booking_bp = Blueprint("booking", __name__)
+logger = get_logger(__name__)
 
 # For backward compatibility, we'll alias Order as Booking
 Booking = Order
@@ -28,11 +30,12 @@ def count_booking_units(start_date, end_date):
 def get_bookings():
     """Get bookings with filtering and pagination"""
     claims = get_jwt()
-    print(f"DEBUG: get_bookings called, claims: {claims}")
-    print(f"DEBUG: permission: {claims.get('permission', 0)}")
+    permission = int(claims.get("permission", 0))
+    
+    logger.info(f"Get bookings request from user with permission {permission}")
 
-    if int(claims.get("permission", 0)) > 1:
-        print("DEBUG: Admin user - getting all bookings")
+    if permission > 1:
+        logger.debug("Admin user accessing all bookings")
         try:
             # Get query parameters with default values
             page = request.args.get("page", default=1, type=int)
@@ -129,10 +132,11 @@ def get_bookings():
             }), 200
 
         except Exception as e:
+            logger.error("Error getting admin bookings", exc_info=True)
             return jsonify({"error": f"Error getting bookings: {str(e)}"}), 500
     else:
         # Regular user - get their own bookings
-        print(f"DEBUG: User permission too low: {claims.get('permission', 0)}")
+        logger.debug(f"Regular user with permission {permission} accessing own bookings")
         try:
             user_orders = Order.get_user_orders(current_user._id)
             orders_data = []
@@ -165,7 +169,7 @@ def get_bookings():
 def get_my_personal_bookings():
     """Get current user's personal bookings - new endpoint"""
     try:
-        print(f"DEBUG: My bookings request for user {current_user._id}")
+        logger.debug(f"My bookings request for user {current_user._id}")
         
         # Get pagination parameters
         page = int(request.args.get("page", default=1))
@@ -174,7 +178,7 @@ def get_my_personal_bookings():
         
         # Get user's orders
         orders = list(Order.get_user_orders(current_user._id))
-        print(f"DEBUG: Found {len(orders)} orders")
+        logger.debug(f"Found {len(orders)} orders")
         
         if not orders:
             return jsonify({
@@ -204,27 +208,27 @@ def get_my_personal_bookings():
                 cart = Cart.find_by_id(order.cart_id)
                 cart_items = []
                 if cart and hasattr(cart, 'items') and cart.items:
-                    print(f"DEBUG: Cart has {len(cart.items)} items")
+                    logger.debug(f"Processing cart with {len(cart.items)} items for order {order._id}")
                     for cart_item in cart.items:
-                        print(f"DEBUG: Processing cart_item: {cart_item}")
+                        logger.debug(f"Processing cart_item: {cart_item}")
                         item = Item.find_by_id(cart_item['item_id'])
                         if item:
                             item_dict = {
                                 "item": item.to_dict(),
                                 "amount": cart_item['amount']
                             }
-                            print(f"DEBUG: Added item_dict: {item_dict}")
+                            logger.debug(f"Added item {item.name} to order")
                             cart_items.append(item_dict)
                         else:
-                            print(f"DEBUG: Item not found for ID: {cart_item['item_id']}")
+                            logger.warning(f"Item not found for ID: {cart_item['item_id']} in order {order._id}")
                 else:
-                    print(f"DEBUG: Cart issues - cart exists: {cart is not None}, has items attr: {hasattr(cart, 'items') if cart else False}, items: {getattr(cart, 'items', None) if cart else None}")
+                    logger.warning(f"Cart issues for order {order._id} - cart exists: {cart is not None}, has items: {hasattr(cart, 'items') if cart else False}")
                 
                 order_dict = order.to_dict()
                 order_dict["cart_items"] = cart_items
                 orders_data.append(order_dict)
             except Exception as e:
-                print(f"DEBUG: Error processing order {order._id}: {str(e)}")
+                logger.error(f"Error processing order {order._id}", exc_info=True)
                 continue
         
         return jsonify({
@@ -236,7 +240,7 @@ def get_my_personal_bookings():
         }), 200
         
     except Exception as e:
-        print(f"DEBUG: Error getting my bookings: {str(e)}")
+        logger.error("Error getting personal bookings", exc_info=True)
         return jsonify({"error": f"Error getting personal bookings: {str(e)}"}), 500
 
 
@@ -247,7 +251,7 @@ def get_booking_by_id(booking_id):
     """Get specific booking by ID"""
     # Handle special case for personal bookings
     if booking_id == "personal":
-        print(f"DEBUG: Handling personal bookings request for user {current_user._id}")
+        logger.debug(f"Handling personal bookings request for user {current_user._id}")
         # Get pagination parameters
         page = int(request.args.get("page", default=1))
         per_page = int(request.args.get("per_page", default=20))
@@ -256,10 +260,11 @@ def get_booking_by_id(booking_id):
         try:
             # Get user's orders
             orders = list(Order.get_user_orders(current_user._id))
-            print(f"DEBUG: Found {len(orders)} orders for user")
+            logger.debug(f"Found {len(orders)} orders for user {current_user._id}")
             
             if not orders:
                 # No orders found - return empty result
+                logger.info(f"No orders found for user {current_user._id}")
                 return jsonify({
                     "bookings": [],
                     "total": 0,
@@ -442,7 +447,10 @@ def create_booking():
                 total_price
             )
         except Exception as e:
-            print(f"Error sending booking email: {str(e)}")
+            logger.error("Error sending booking confirmation email", extra={
+                "order_id": str(new_order._id),
+                "user_email": current_user.email
+            }, exc_info=True)
 
         return jsonify({
             "message": "BOOKING_CREATED",
@@ -479,7 +487,9 @@ def get_available_amount_for_dates(item_id, start_date, end_date, total_amount):
         return max(0, total_amount - booked_amount)
     
     except Exception as e:
-        print(f"Error calculating available amount for item {item_id}: {str(e)}")
+        logger.error("Error calculating available amount for item", extra={
+            "item_id": item_id
+        }, exc_info=True)
         return total_amount
 
 
@@ -535,7 +545,11 @@ def update_booking_status(booking_id, status):
                             booking_id
                         )
                 except Exception as e:
-                    print(f"Error sending status update email: {str(e)}")
+                    logger.error("Error sending status update email", extra={
+                        "booking_id": booking_id,
+                        "new_status": booking.status,
+                        "user_email": user.email
+                    }, exc_info=True)
 
         return jsonify({"message": f"BOOKING_STATUS_UPDATED_TO_{booking.status}"}), 200
 
@@ -680,10 +694,10 @@ def send_booking_return_reminders():
         tomorrow = (datetime.now() + timedelta(days=1)).date()
         
         # Get bookings ending in 1 day
-        ending_orders = Order.get_collection().find({
+        ending_orders = list(Order.get_collection().find({
             "status": "APPROVED",
             "end_date": tomorrow.isoformat()
-        })
+        }))
 
         for order_data in ending_orders:
                 order = Order(**order_data)
@@ -699,9 +713,16 @@ def send_booking_return_reminders():
                                 order.end_date
                             )
                         except Exception as e:
-                            print(f"Error sending reminder to {user.email}: {str(e)}")
+                            logger.error("Error sending return reminder email", extra={
+                                "user_email": user.email,
+                                "order_id": str(order._id),
+                                "end_date": str(order.end_date)
+                            }, exc_info=True)
 
-        print(f"Return reminders processed for {tomorrow}")
+        logger.info("Return reminders processing completed", extra={
+            "date": str(tomorrow),
+            "orders_processed": len(ending_orders)
+        })
 
     except Exception as e:
-        print(f"Error in send_booking_return_reminders: {str(e)}")
+        logger.error("Error in send_booking_return_reminders function", exc_info=True)

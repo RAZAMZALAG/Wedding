@@ -1,0 +1,1 @@
+{"timestamp": "2025-08-27T17:55:03.716380Z", "level": "WARNING", "logger": "performance", "message": "Slow operation test completed in 600.45ms", "module": "logger_config", "function": "__exit__", "line": 385, "thread": 5588, "process": 21580, "data": {"operation": "Slow operation test", "duration_ms": 600.4509999999999}}

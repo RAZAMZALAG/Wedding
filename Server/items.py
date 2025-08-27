@@ -5,9 +5,11 @@ from extensions import mongo
 from models import Item, Category, Cart, Order
 from datetime import date, datetime, timedelta
 from collections import defaultdict
+from logger_config import get_logger, log_database_operation, log_user_action, PerformanceMonitor
 import base64
 
 item_bp = Blueprint("items", __name__)
+logger = get_logger(__name__)
 
 
 @item_bp.get('/')
@@ -132,7 +134,7 @@ def is_item_available_for_dates(item_id, start_date, end_date, total_amount):
         return (total_amount - booked_amount) > 0
 
     except Exception as e:
-        print(f"Error checking availability for item {item_id}: {str(e)}")
+        logger.error(f"Error checking availability for item {item_id}", exc_info=True)
         return True  # Default to available if there's an error
 
 
@@ -194,7 +196,7 @@ def get_available_amount_for_dates(item_id, start_date, end_date, total_amount):
         return max(0, total_amount - booked_amount)
     
     except Exception as e:
-        print(f"Error calculating available amount for item {item_id}: {str(e)}")
+        logger.error(f"Error calculating available amount for item {item_id}", exc_info=True)
         return total_amount
 
 
@@ -249,6 +251,10 @@ def add_item():
     """Add new item (admin only)"""
     claims = get_jwt()
     if claims.get("permission", 0) < 2:
+        logger.warning("Unauthorized item creation attempt", extra={
+            "user_permission": claims.get("permission", 0),
+            "required_permission": 2
+        })
         return jsonify({"error": "FORBIDDEN"}), 403
 
     try:
@@ -260,36 +266,73 @@ def add_item():
         hidden = request.form.get('hidden', 'false').lower() == 'true'
         image_file = request.files.get('image')
         
+        logger.info("Admin creating new item", extra={
+            "user_id": claims.get("user_id"),
+            "item_name": name,
+            "category": category,
+            "amount": amount,
+            "price": price,
+            "hidden": hidden,
+            "has_image": bool(image_file)
+        })
+        
         # Validate required fields
+        missing_fields = []
         if not name:
-            return jsonify({"error": "MISSING_FIELD: name"}), 400
+            missing_fields.append("name")
         if not category:
-            return jsonify({"error": "MISSING_FIELD: category"}), 400
+            missing_fields.append("category")
         if not price:
-            return jsonify({"error": "MISSING_FIELD: price"}), 400
+            missing_fields.append("price")
         if not amount:
-            return jsonify({"error": "MISSING_FIELD: amount"}), 400
+            missing_fields.append("amount")
+            
+        if missing_fields:
+            logger.warning("Item creation failed - missing fields", extra={
+                "missing_fields": missing_fields
+            })
+            return jsonify({"error": f"MISSING_FIELD: {', '.join(missing_fields)}"}), 400
+            
+        # Validate numeric values
+        try:
+            amount_int = int(amount)
+            price_float = float(price)
+            if amount_int <= 0 or price_float <= 0:
+                raise ValueError("Amount and price must be positive")
+        except ValueError as e:
+            logger.warning("Item creation failed - invalid numeric values", extra={
+                "amount": amount,
+                "price": price,
+                "error": str(e)
+            })
+            return jsonify({"error": "Invalid amount or price values"}), 400
 
         # Check if category exists
         category_obj = Category.get_by_name(category)
         if not category_obj:
             # Create new category
+            logger.info("Creating new category for item", extra={"category": category})
             new_category = Category(name=category)
             new_category.save()
+            logger.info("New category created successfully", extra={"category": category})
 
         # Handle image file
         image_filename = None
         if image_file:
             # Save image file (you might want to implement proper file handling)
             image_filename = image_file.filename
+            logger.debug("Image file uploaded for item", extra={
+                "filename": image_filename,
+                "item_name": name
+            })
 
         # Create new item
         new_item = Item(
             name=name,
             category=category,
-            amount=int(amount),
-            total_amount=int(amount),
-            price=float(price),
+            amount=amount_int,
+            total_amount=amount_int,
+            price=price_float,
             notes='',
             description='',
             condition='מעולה',
@@ -298,6 +341,16 @@ def add_item():
         )
         
         new_item.save()
+        
+        logger.info("New item created successfully", extra={
+            "item_id": str(new_item._id),
+            "name": name,
+            "category": category,
+            "amount": amount_int,
+            "price": price_float,
+            "hidden": hidden,
+            "created_by": claims.get("user_id")
+        })
         
         # Return the created item data
         item_data = {
@@ -317,6 +370,11 @@ def add_item():
         return jsonify(item_data), 201
         
     except Exception as e:
+        logger.error("Error creating new item", extra={
+            "item_name": name if 'name' in locals() else 'unknown',
+            "category": category if 'category' in locals() else 'unknown',
+            "user_id": claims.get("user_id")
+        }, exc_info=True)
         return jsonify({"error": f"Error creating item: {str(e)}"}), 500
 
 
@@ -326,14 +384,32 @@ def update_item(item_id):
     """Update item (admin only)"""
     claims = get_jwt()
     if claims.get("permission", 0) < 2:
+        logger.warning("Unauthorized item update attempt", extra={
+            "user_permission": claims.get("permission", 0),
+            "item_id": item_id
+        })
         return jsonify({"error": "FORBIDDEN"}), 403
 
     try:
         item = Item.find_by_id(item_id)
         if not item:
+            logger.warning("Item update failed - item not found", extra={
+                "item_id": item_id,
+                "user_id": claims.get("user_id")
+            })
             return jsonify({"error": "ITEM_NOT_FOUND"}), 404
 
         data = request.get_json()
+        
+        logger.info("Admin updating item", extra={
+            "item_id": item_id,
+            "item_name": item.name,
+            "user_id": claims.get("user_id"),
+            "update_fields": list(data.keys()) if data else []
+        })
+        
+        # Track changes for logging
+        changes = {}
         
         # Update fields if provided
         updateable_fields = ['name', 'category', 'amount', 'total_amount', 'price', 
@@ -341,22 +417,51 @@ def update_item(item_id):
         
         for field in updateable_fields:
             if field in data:
+                old_value = getattr(item, field, None)
+                new_value = data[field]
+                
                 if field == 'price':
-                    setattr(item, field, float(data[field]))
+                    new_value = float(new_value)
+                    setattr(item, field, new_value)
                 else:
-                    setattr(item, field, data[field])
+                    setattr(item, field, new_value)
+                
+                if old_value != new_value:
+                    changes[field] = {
+                        "old": old_value,
+                        "new": new_value
+                    }
 
         # Check if new category exists
         if 'category' in data:
             category = Category.get_by_name(data['category'])
             if not category:
+                logger.info("Creating new category during item update", extra={
+                    "category": data['category'],
+                    "item_id": item_id
+                })
                 new_category = Category(name=data['category'])
                 new_category.save()
+                logger.info("New category created during item update", extra={
+                    "category": data['category']
+                })
 
         item.save()
+        
+        logger.info("Item updated successfully", extra={
+            "item_id": item_id,
+            "item_name": item.name,
+            "changes": changes,
+            "updated_by": claims.get("user_id")
+        })
+        
         return jsonify({"message": "ITEM_UPDATED"}), 200
         
     except Exception as e:
+        logger.error("Error updating item", extra={
+            "item_id": item_id,
+            "user_id": claims.get("user_id")
+        }, exc_info=True)
         return jsonify({"error": f"Error updating item: {str(e)}"}), 500
 
 
@@ -366,28 +471,66 @@ def delete_item(item_id):
     """Delete item (admin only)"""
     claims = get_jwt()
     if claims.get("permission", 0) < 2:
+        logger.warning("Unauthorized item deletion attempt", extra={
+            "user_permission": claims.get("permission", 0),
+            "item_id": item_id
+        })
         return jsonify({"error": "FORBIDDEN"}), 403
 
     try:
         item = Item.find_by_id(item_id)
         if not item:
+            logger.warning("Item deletion failed - item not found", extra={
+                "item_id": item_id,
+                "user_id": claims.get("user_id")
+            })
             return jsonify({"error": "ITEM_NOT_FOUND"}), 404
+
+        logger.info("Admin attempting to delete item", extra={
+            "item_id": item_id,
+            "item_name": item.name,
+            "category": item.category,
+            "user_id": claims.get("user_id")
+        })
 
         # Check if item is in any active orders
         active_orders = Order.get_collection().find({
             "status": {"$nin": ["CANCELLED", "COMPLETED"]}
         })
         
+        active_order_count = 0
         for order in active_orders:
             cart = Cart.find_by_id(order.get("cart_id"))
             if cart and hasattr(cart, 'items'):
                 for cart_item in cart.items:
                     if cart_item.get('item_id') == item_id:
-                        return jsonify({"error": "ITEM_IN_ACTIVE_ORDERS"}), 400
+                        active_order_count += 1
+                        break
+        
+        if active_order_count > 0:
+            logger.warning("Item deletion blocked - item is in active orders", extra={
+                "item_id": item_id,
+                "item_name": item.name,
+                "active_orders_count": active_order_count,
+                "user_id": claims.get("user_id")
+            })
+            return jsonify({"error": "ITEM_IN_ACTIVE_ORDERS"}), 400
 
         # Delete item
         item.delete()
+        
+        logger.info("Item deleted successfully", extra={
+            "item_id": item_id,
+            "item_name": item.name,
+            "category": item.category,
+            "deleted_by": claims.get("user_id")
+        })
+        
         return jsonify({"message": "ITEM_DELETED"}), 200
         
     except Exception as e:
+        logger.error("Error deleting item", extra={
+            "item_id": item_id,
+            "user_id": claims.get("user_id")
+        }, exc_info=True)
         return jsonify({"error": f"Error deleting item: {str(e)}"}), 500
