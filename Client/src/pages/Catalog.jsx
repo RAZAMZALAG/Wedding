@@ -201,11 +201,17 @@ const Catalog = () => {
     params.append("only_available", showAvailableOnly);
     params.append("load_categories", true);
     if (startDate && endDate) {
-      params.append("start_date", startDate.toISOString().split("T")[0]);
-      params.append("end_date", endDate.toISOString().split("T")[0]);
+      const startDateStr = startDate.toISOString().split("T")[0];
+      const endDateStr = endDate.toISOString().split("T")[0];
+      params.append("start_date", startDateStr);
+      params.append("end_date", endDateStr);
+      console.log("🗓️ Date range sent to server:", startDateStr, "to", endDateStr);
+    } else {
+      console.log("❌ No date range selected");
     }
     try {
       setCatalogLoading(true);
+      console.log("📡 Fetching items with params:", Object.fromEntries(params));
       const response = await api.get(EP_ITEMS, {
         params,
         signal: controller.signal, // Pass the signal to allow request cancellation
@@ -214,6 +220,16 @@ const Catalog = () => {
       // If the request is not aborted, update state with the response data
       if (!controller.signal.aborted) {
         if (response.status === HttpStatusCode.Ok) {
+          console.log("✅ Items received:", response.data.items?.length, "items");
+          // Log first item with available_amount for debugging
+          if (response.data.items?.[0]) {
+            console.log("🔍 Sample item data:", {
+              name: response.data.items[0].name,
+              total_amount: response.data.items[0].total_amount || response.data.items[0].amount,
+              available_amount: response.data.items[0].available_amount,
+              booked_amount: response.data.items[0].booked_amount
+            });
+          }
           setItems(response.data.items || []);
           setTotalItems(response.data.total_items || 0);
           setCategories(response.data.categories || []);
@@ -290,6 +306,15 @@ const Catalog = () => {
   };
 
   useEffect(() => {
+    console.log("🔄 useEffect triggered. Filters changed:", filtersChanged, {
+      startDate: startDate ? startDate.toISOString().split("T")[0] : null,
+      endDate: endDate ? endDate.toISOString().split("T")[0] : null,
+      debouncedSearch,
+      categoryFilter,
+      showAvailableOnly,
+      currentPage
+    });
+    
     if (filtersChanged) {
       fetchItems();
       setFiltersChanged(false); // Reset the flag after fetching
@@ -708,8 +733,14 @@ const Catalog = () => {
                 endDate={endDate}
                 onChange={(dates) => {
                   const [start, end] = dates;
+                  console.log("📅 DatePicker onChange:", {
+                    start: start ? start.toISOString().split("T")[0] : null,
+                    end: end ? end.toISOString().split("T")[0] : null
+                  });
                   setStartDate(start);
                   setEndDate(end);
+                  // Force filters to update
+                  setFiltersChanged(true);
                 }}
                 withPortal
                 minDate={new Date()}

@@ -83,9 +83,38 @@ def get_paged_items():
 
         # Convert to Item objects and prepare response
         items_data = []
+        start_date_str = request.args.get('start_date')
+        end_date_str = request.args.get('end_date')
+        
         for item_data in items_page:
             item = Item(**item_data)
             item_dict = item.to_dict()  # Use the to_dict method that includes 'id'
+            
+            # If date range provided, calculate available amount for display
+            if start_date_str and end_date_str:
+                try:
+                    start_date = datetime.fromisoformat(start_date_str).date()
+                    end_date = datetime.fromisoformat(end_date_str).date()
+                    
+                    # Calculate available amount for the specific date range
+                    available_amount = get_available_amount_for_dates(
+                        item._id, start_date, end_date, item.total_amount
+                    )
+                    item_dict['available_amount'] = available_amount
+                    
+                    # Add booking information
+                    booked_amount = item.total_amount - available_amount
+                    item_dict['booked_amount'] = booked_amount
+                    
+                except ValueError:
+                    # If date parsing fails, show total amount
+                    item_dict['available_amount'] = item.total_amount
+                    item_dict['booked_amount'] = 0
+            else:
+                # No date range specified, show total amount
+                item_dict['available_amount'] = item.total_amount  
+                item_dict['booked_amount'] = 0
+                
             items_data.append(item_dict)
 
         response_data = {
@@ -107,10 +136,10 @@ def get_paged_items():
         return jsonify({"error": f"Error retrieving items: {str(e)}"}), 500
 
 
-def is_item_available_for_dates(item_id, start_date, end_date, total_amount):
-    """Check if item is available for the given date range"""
+def get_available_amount_for_dates(item_id, start_date, end_date, total_amount):
+    """Helper function to get available amount for item in date range"""
     try:
-        # Get all orders for this item in the date range
+        # Get overlapping orders
         orders = Order.get_collection().find({
             "status": {"$nin": ["CANCELLED", "COMPLETED"]},
             "$or": [
@@ -121,18 +150,28 @@ def is_item_available_for_dates(item_id, start_date, end_date, total_amount):
             ]
         })
 
-        # Calculate total booked amount for this item
         booked_amount = 0
         for order in orders:
-            # Get cart items for this order
             cart = Cart.find_by_id(order.get("cart_id"))
             if cart and hasattr(cart, 'items'):
                 for cart_item in cart.items:
-                    if cart_item.get('item_id') == item_id:
+                    if str(cart_item.get('item_id')) == str(item_id):
                         booked_amount += cart_item.get('amount', 0)
 
-        return (total_amount - booked_amount) > 0
+        return max(0, total_amount - booked_amount)
+    
+    except Exception as e:
+        logger.error("Error calculating available amount for item", extra={
+            "item_id": item_id
+        }, exc_info=True)
+        return total_amount
 
+
+def is_item_available_for_dates(item_id, start_date, end_date, total_amount):
+    """Check if item is available for the given date range"""
+    try:
+        available_amount = get_available_amount_for_dates(item_id, start_date, end_date, total_amount)
+        return available_amount > 0
     except Exception as e:
         logger.error(f"Error checking availability for item {item_id}", exc_info=True)
         return True  # Default to available if there's an error
@@ -169,35 +208,6 @@ def get_available_items():
         return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
     except Exception as e:
         return jsonify({"error": f"Error getting available items: {str(e)}"}), 500
-
-
-def get_available_amount_for_dates(item_id, start_date, end_date, total_amount):
-    """Get available amount for item in date range"""
-    try:
-        # Get overlapping orders
-        orders = Order.get_collection().find({
-            "status": {"$nin": ["CANCELLED", "COMPLETED"]},
-            "$or": [
-                {
-                    "start_date": {"$lte": end_date.isoformat()},
-                    "end_date": {"$gte": start_date.isoformat()}
-                }
-            ]
-        })
-
-        booked_amount = 0
-        for order in orders:
-            cart = Cart.find_by_id(order.get("cart_id"))
-            if cart and hasattr(cart, 'items'):
-                for cart_item in cart.items:
-                    if cart_item.get('item_id') == item_id:
-                        booked_amount += cart_item.get('amount', 0)
-
-        return max(0, total_amount - booked_amount)
-    
-    except Exception as e:
-        logger.error(f"Error calculating available amount for item {item_id}", exc_info=True)
-        return total_amount
 
 
 @item_bp.get('/categories')
