@@ -1,4 +1,5 @@
 import uuid
+from bson import ObjectId
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, current_user, get_jwt
 from models import Item, Order, User, Cart
@@ -98,13 +99,13 @@ def get_bookings():
                     if item:
                         cart_items.append({
                             "item": item.to_dict(),
-                            "amount": cart_item['amount']
+                            "amount": cart_item.get('amount', cart_item.get('quantity', 1))  # Handle both 'amount' and 'quantity' keys
                         })
 
                 order_dict = order.to_dict()
                 order_dict.update({
                     "user": {
-                        "_id": user._id,
+                        "_id": str(user._id),  # Convert ObjectId to string for JSON serialization
                         "first_name": user.first_name,
                         "last_name": user.last_name,
                         "email": user.email,
@@ -189,11 +190,12 @@ def get_my_personal_bookings():
                 "total_pages": 0
             }), 200
         
-        # Sort orders by created_at
+        # Sort orders by ObjectId which contains creation timestamp
         if direction == "desc":
-            orders.sort(key=lambda x: x.created_at, reverse=True)
+            # Sort using MongoDB aggregation to avoid datetime comparison issues
+            orders = sorted(orders, key=lambda x: str(x._id), reverse=True)  # Convert ObjectId to string for consistent ordering
         else:
-            orders.sort(key=lambda x: x.created_at)
+            orders = sorted(orders, key=lambda x: str(x._id))
         
         # Pagination
         total_orders = len(orders)
@@ -215,7 +217,7 @@ def get_my_personal_bookings():
                         if item:
                             item_dict = {
                                 "item": item.to_dict(),
-                                "amount": cart_item['amount']
+                                "amount": cart_item.get('amount', cart_item.get('quantity', 1))  # Handle both 'amount' and 'quantity' keys
                             }
                             logger.debug(f"Added item {item.name} to order")
                             cart_items.append(item_dict)
@@ -296,7 +298,7 @@ def get_booking_by_id(booking_id):
                         if item:
                             cart_items.append({
                                 "item": item.to_dict(),
-                                "amount": cart_item['amount']
+                                "amount": cart_item.get('amount', cart_item.get('quantity', 1))  # Handle both 'amount' and 'quantity' keys
                             })
                 
                 order_dict = order.to_dict()
@@ -402,11 +404,11 @@ def create_booking():
                 item._id, start_date, end_date, item.total_amount
             )
             
-            if cart_item['amount'] > available_amount:
+            if cart_item.get('amount', cart_item.get('quantity', 1)) > available_amount:
                 return jsonify({
                     "error": "INSUFFICIENT_AVAILABILITY",
                     "item_name": item.name,
-                    "requested": cart_item['amount'],
+                    "requested": cart_item.get('amount', cart_item.get('quantity', 1)),
                     "available": available_amount
                 }), 400
 
@@ -417,7 +419,7 @@ def create_booking():
         for cart_item in user_cart.items:
             item = Item.find_by_id(cart_item['item_id'])
             if item:
-                total_price += item.price * cart_item['amount'] * rental_days
+                total_price += item.price * cart_item.get('amount', cart_item.get('quantity', 1)) * rental_days
 
         # Create order
         new_order = Order(
@@ -654,6 +656,72 @@ def update_cart_item():
 
     except Exception as e:
         return jsonify({"error": f"Error updating cart: {str(e)}"}), 500
+
+
+@booking_bp.put('/cart/<item_id>/increase')
+@jwt_required()
+def increase_cart_item_quantity(item_id):
+    """Increase quantity of item in user's cart"""
+    try:
+        cart = Cart.get_user_cart(current_user._id)
+        
+        # Find the item in cart
+        item_found = False
+        for cart_item in cart.items:
+            if cart_item['item_id'] == item_id:
+                # Check if we can increase (don't exceed item's total amount)
+                item = Item.find_by_id(item_id)
+                if item and cart_item['amount'] < item.total_amount:
+                    cart_item['amount'] += 1
+                    item_found = True
+                    logger.info(f"Increased quantity of item {item_id} in cart for user {current_user._id}")
+                    break
+                else:
+                    return jsonify({"error": "CANNOT_INCREASE_QUANTITY_EXCEEDS_AVAILABLE"}), 400
+        
+        if not item_found:
+            return jsonify({"error": "ITEM_NOT_FOUND_IN_CART"}), 404
+            
+        cart.save()
+        return jsonify({"message": "QUANTITY_INCREASED"}), 200
+
+    except Exception as e:
+        logger.error(f"Error increasing cart item quantity: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Error increasing quantity: {str(e)}"}), 500
+
+
+@booking_bp.put('/cart/<item_id>/decrease')
+@jwt_required()
+def decrease_cart_item_quantity(item_id):
+    """Decrease quantity of item in user's cart"""
+    try:
+        cart = Cart.get_user_cart(current_user._id)
+        
+        # Find the item in cart
+        item_found = False
+        for cart_item in cart.items:
+            if cart_item['item_id'] == item_id:
+                if cart_item['amount'] > 1:
+                    cart_item['amount'] -= 1
+                    item_found = True
+                    logger.info(f"Decreased quantity of item {item_id} in cart for user {current_user._id}")
+                    break
+                else:
+                    # If quantity would become 0, remove the item instead
+                    cart.items.remove(cart_item)
+                    item_found = True
+                    logger.info(f"Removed item {item_id} from cart for user {current_user._id} (quantity reached 0)")
+                    break
+        
+        if not item_found:
+            return jsonify({"error": "ITEM_NOT_FOUND_IN_CART"}), 404
+            
+        cart.save()
+        return jsonify({"message": "QUANTITY_DECREASED"}), 200
+
+    except Exception as e:
+        logger.error(f"Error decreasing cart item quantity: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Error decreasing quantity: {str(e)}"}), 500
 
 
 @booking_bp.delete('/cart/remove/<item_id>')

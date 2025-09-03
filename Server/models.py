@@ -57,19 +57,23 @@ class BaseModel:
     
     def to_dict(self):
         """Convert model to dictionary"""
+        from bson import ObjectId
         result = {}
         for key, value in self.__dict__.items():
             if isinstance(value, date):
                 result[key] = value.isoformat()
             elif isinstance(value, datetime):
                 result[key] = value.isoformat()
+            elif isinstance(value, ObjectId):
+                result[key] = str(value)
             else:
                 result[key] = value
         
         # Convert _id to id for frontend compatibility
         if '_id' in result:
-            result['id'] = result['_id']
-            # Keep _id for MongoDB operations
+            result['id'] = str(result['_id'])  # Convert ObjectId to string
+            # Keep _id for MongoDB operations but as string
+            result['_id'] = str(result['_id'])
             
         return result
     

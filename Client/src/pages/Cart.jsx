@@ -83,7 +83,7 @@ const Cart = () => {
       const response = await api.put(EP_CART + `/${itemId}/increase`);
       setCartItems((prevItems) =>
         prevItems.map((item) =>
-          item.id === itemId ? { ...item, amount: item.amount + 1 } : item,
+          item.item.id === itemId ? { ...item, amount: item.amount + 1, item_total: item.item.price * (item.amount + 1) } : item,
         ),
       );
       refreshCartCount(); // <-- update context count
@@ -105,7 +105,7 @@ const Cart = () => {
       const response = await api.put(EP_CART + `/${itemId}/decrease`);
       setCartItems((prevItems) =>
         prevItems.map((item) =>
-          item.id === itemId ? { ...item, amount: item.amount - 1 } : item,
+          item.item.id === itemId ? { ...item, amount: item.amount - 1, item_total: item.item.price * (item.amount - 1) } : item,
         ),
       );
       refreshCartCount(); // <-- update context count
@@ -256,7 +256,7 @@ const Cart = () => {
                           >
                             <Box sx={{ display: "flex", alignItems: "center" }}>
                               <IconButton
-                                onClick={() => decreaseAmount(item.id)}
+                                onClick={() => decreaseAmount(item.item.id)}
                                 disabled={item.amount === 1}
                                 size="small"
                               >
@@ -266,7 +266,7 @@ const Cart = () => {
                                 {item.amount}
                               </Typography>
                               <IconButton
-                                onClick={() => increaseAmount(item.id)}
+                                onClick={() => increaseAmount(item.item.id)}
                                 disabled={item.amount === item.item.total_amount}
                                 size="small"
                               >
@@ -274,7 +274,7 @@ const Cart = () => {
                               </IconButton>
                             </Box>
                             <IconButton
-                              onClick={() => removeItem(item.id)}
+                              onClick={() => removeItem(item.item.id)}
                               color="error"
                               size="small"
                             >
