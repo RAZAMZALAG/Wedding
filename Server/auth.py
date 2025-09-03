@@ -107,6 +107,7 @@ from flask_jwt_extended import decode_token
 @auth_bp.get("/verify-email")
 def verify_email():
     token = request.args.get("token")
+    
     if not token:
         return jsonify({"error": "NO_TOKEN_PROVIDED"}), 400
 
@@ -123,7 +124,6 @@ def verify_email():
         return jsonify({"error": "USER_NOT_FOUND"}), 404
 
     if user.verified:
-        client_url = os.getenv("CLIENT_URL", "http://localhost:5173")
         return render_template_string("""
         <html dir="rtl" lang="he">
           <head>
@@ -132,16 +132,16 @@ def verify_email():
           </head>
           <body style="text-align:center; font-family:Arial; margin-top:50px;">
             <h2>✅ כתובת הדוא"ל שלך כבר אומתה בעבר.</h2>
-            <p>באפשרותך <a href="{{ client_url }}/login">להתחבר</a> לאתר Wedding Dreams 💒</p>
+            <p>חזור לאתר Wedding Dreams והתחבר עם המשתמש שלך 💒</p>
+            <p style="color:gray; font-size:14px;">ניתן לסגור את הטאב הזה</p>
           </body>
         </html>
-        """, client_url=client_url)
+        """)
 
     # עדכון סטטוס האימות ושמירה
     user.verified = True
     user.save()
 
-    client_url = os.getenv("CLIENT_URL", "http://localhost:5173")
     return render_template_string("""
     <html dir="rtl" lang="he">
       <head>
@@ -150,10 +150,11 @@ def verify_email():
       </head>
       <body style="text-align:center; font-family:Arial; margin-top:50px;">
         <h2>✅ האימות הושלם בהצלחה!</h2>
-        <p>כעת באפשרותך <a href="{{ client_url }}/login">להתחבר</a> לאתר Wedding Dreams 💒</p>
+        <p>חזור לאתר Wedding Dreams והתחבר עם המשתמש שלך 💒</p>
+        <p style="color:gray; font-size:14px;">ניתן לסגור את הטאב הזה</p>
       </body>
     </html>
-    """, client_url=client_url)
+    """)
 
 
 
