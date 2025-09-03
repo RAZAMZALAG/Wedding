@@ -30,6 +30,8 @@ import SortIcon from "@mui/icons-material/Sort";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import EventNoteIcon from "@mui/icons-material/EventNote";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import AssignmentTurnedInIcon from "@mui/icons-material/AssignmentTurnedIn";
 import api from "../api.js";
 import {
   DEFAULT_PAGE_SIZE,
@@ -59,9 +61,11 @@ const tableHeadings = [
 ];
 
 const typeMapping = {
-  0: "all",  // Show all bookings
-  1: "PENDING",
-  2: "APPROVED",
+  0: "all",        // Show all bookings
+  1: "PENDING",    // Pending bookings
+  2: "APPROVED",   // Approved bookings
+  3: "COLLECTED",  // Collected by customer
+  4: "RETURNED",   // Returned and completed
 };
 
 const AllBookings = () => {
@@ -322,13 +326,16 @@ const AllBookings = () => {
           value={selectedTab}
           onChange={handleTabChange}
           aria-label="Booking Status Tabs"
-          variant="fullWidth"
+          variant="scrollable"
+          scrollButtons="auto"
           indicatorColor="secondary"
           textColor="inherit"
         >
-          <Tab icon={<EventNoteIcon />} label={t("all_bookings_future")} />
-          <Tab icon={<AccessTimeIcon />} label={t("all_bookings_existing")} />
-          <Tab icon={<DoneAllIcon />} label={t("all_bookings_done")} />
+          <Tab icon={<EventNoteIcon />} label="כל ההזמנות" />
+          <Tab icon={<AccessTimeIcon />} label="ממתין לאישור" />
+          <Tab icon={<DoneAllIcon />} label="הזמנות מאושרות" />
+          <Tab icon={<CheckCircleIcon />} label="נמסר ללקוח" />
+          <Tab icon={<AssignmentTurnedInIcon />} label="הזמנות הושלמו" />
         </Tabs>
       </Box>
 
@@ -487,7 +494,7 @@ const AllBookings = () => {
                                 fontWeight: "bold",
                               }}
                             >
-                              {t(`booking_status_${status}`)}
+                              {getStatusInfo(status).label}
                             </MenuItem>
                           );
                         })}

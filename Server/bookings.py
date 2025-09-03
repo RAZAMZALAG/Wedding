@@ -506,14 +506,14 @@ def update_booking_status(booking_id, status):
         if not booking:
             return jsonify({"error": "BOOKING_NOT_FOUND"}), 404
 
-        valid_statuses = ["PENDING", "APPROVED", "REJECTED", "COMPLETED", "CANCELLED"]
+        valid_statuses = ["PENDING", "APPROVED", "REJECTED", "COLLECTED", "RETURNED", "COMPLETED", "CANCELLED"]
         if status.upper() not in valid_statuses:
             return jsonify({"error": "INVALID_STATUS"}), 400
 
         old_status = booking.status
         booking.status = status.upper()
         
-        if booking.status in ["APPROVED", "COMPLETED"]:
+        if booking.status in ["APPROVED", "COLLECTED", "RETURNED", "COMPLETED"]:
             booking.finalization_date = date.today()
         
         booking.save()
@@ -538,12 +538,13 @@ def update_booking_status(booking_id, status):
                             user.first_name,
                             booking_id
                         )
-                    elif booking.status == "COMPLETED":
+                    elif booking.status in ["RETURNED", "COMPLETED"]:
                         send_return_thank_you_email(
                             user.email,
-                            user.first_name,
-                            booking_id
+                            user.first_name
                         )
+                    # Note: COLLECTED status doesn't need an email notification
+                    # as the customer already picked up the items
                 except Exception as e:
                     logger.error("Error sending status update email", extra={
                         "booking_id": booking_id,
@@ -693,9 +694,9 @@ def send_booking_return_reminders():
         # Get bookings ending in 1 day
         tomorrow = (datetime.now() + timedelta(days=1)).date()
         
-        # Get bookings ending in 1 day
+        # Get bookings ending in 1 day that need return reminders
         ending_orders = list(Order.get_collection().find({
-            "status": "APPROVED",
+            "status": {"$in": ["APPROVED", "COLLECTED"]},  # Both approved and already collected orders
             "end_date": tomorrow.isoformat()
         }))
 
@@ -706,11 +707,18 @@ def send_booking_return_reminders():
                     user = User.find_by_id(cart.user_id)
                     if user:
                         try:
+                            # Get item names for this order
+                            item_names = []
+                            for item in cart.items:
+                                item_obj = Item.find_by_id(item.get('item_id'))
+                                if item_obj:
+                                    item_names.append(item_obj.name)
+                            
                             send_return_reminder_email(
                                 user.email,
                                 user.first_name,
-                                order._id,
-                                order.end_date
+                                order.end_date,
+                                item_names
                             )
                         except Exception as e:
                             logger.error("Error sending return reminder email", extra={
