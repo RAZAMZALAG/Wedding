@@ -91,48 +91,106 @@ def send_verification_email(to_email, name, token):
     except Exception as e:
         logger.error(f"Failed to send verification email to {to_email}: {e}", exc_info=True)
 
-def send_booking_pending_email(to_email, name, items, start_date, end_date):
+def send_booking_pending_email(to_email, name, order_id, start_date, end_date, total_price):
+    """Send booking pending confirmation email with MongoDB data"""
+    from models import Order, Cart, Item
+    
     subject = "ההזמנה שלך לחתונה בבדיקה 💎"
-    item_list = "\n".join([f"- {item}" for item in items])
     
-    body = f"""שלום {name},
+    try:
+        # Get order details
+        order = Order.find_by_id(order_id)
+        if not order:
+            logger.error(f"Order {order_id} not found for email")
+            return
+            
+        # Get cart and items
+        cart = Cart.find_by_id(order.cart_id)
+        if not cart:
+            logger.error(f"Cart {order.cart_id} not found for email")
+            return
+            
+        # Build items list
+        item_list = []
+        for cart_item in cart.items:
+            item = Item.find_by_id(cart_item['item_id'])
+            if item:
+                item_list.append(f"- {item.name} (כמות: {cart_item['amount']})")
+        
+        items_text = "\n".join(item_list) if item_list else "לא נמצאו פריטים"
+        
+        body = f"""שלום {name},
 
-קיבלנו את הבקשה שלך להשכרת ציוד לחתונה, והיא כעת בבדיקה ✨  
-הפריטים שביקשת:
+קיבלנו את הבקשה שלך להשכרת ציוד לחתונה, והיא כעת בבדיקה ✨
 
-{item_list}
+פרטי ההזמנה:
+מספר הזמנה: {order_id}
+תאריך האירוע: {start_date} עד {end_date}
+סה"כ לתשלום: ₪{total_price}
 
-🗓 תקופת השכרה: {start_date.strftime('%d/%m/%Y')} עד {end_date.strftime('%d/%m/%Y')}
+הפריטים שהזמנת:
+{items_text}
 
-נעדכן אותך ברגע שההזמנה תאושר ✉️
+נבדוק את הזמינות ונחזור אליך בהקדם!
 
-תודה שבחרת ב-Wedding Planner לחתונה שלך!  
-– צוות Wedding Planner 💖
-"""
-    send_email(to_email, subject, body)
+תודה,
+צוות Wedding Dreams 💍"""
 
-def send_booking_approved_email(to_email, name, items, total_price, order_date, event_date=None):
+        send_email(to_email, subject, body)
+        
+    except Exception as e:
+        logger.error(f"Error building pending email for order {order_id}: {str(e)}", exc_info=True)
+
+
+def send_booking_approved_email(to_email, name, order_id, start_date, end_date):
+    """Send booking approved email with MongoDB data"""
+    from models import Order, Cart, Item
+    
     subject = "ההזמנה שלך לחתונה אושרה! ✅"
-    item_list = "\n".join([f"- {item}" for item in items])
-    event_info = f"\n🎉 תאריך האירוע: {event_date.strftime('%Y-%m-%d')}" if event_date else ""
     
-    body = f"""שלום {name} 👋
+    try:
+        # Get order details
+        order = Order.find_by_id(order_id)
+        if not order:
+            logger.error(f"Order {order_id} not found for email")
+            return
+            
+        # Get cart and items
+        cart = Cart.find_by_id(order.cart_id)
+        if not cart:
+            logger.error(f"Cart {order.cart_id} not found for email")
+            return
+            
+        # Build items list
+        item_list = []
+        for cart_item in cart.items:
+            item = Item.find_by_id(cart_item['item_id'])
+            if item:
+                item_list.append(f"- {item.name} (כמות: {cart_item['amount']})")
+        
+        items_text = "\n".join(item_list) if item_list else "לא נמצאו פריטים"
+        
+        body = f"""שלום {name},
 
-איזה כיף! ההזמנה שלך לחתונה אושרה 🎉
+מזל טוב! ההזמנה שלך לחתונה אושרה ✅
 
-📦 פרטי ההזמנה:
-{item_list}
+פרטי ההזמנה:
+מספר הזמנה: {order_id}
+תאריך האירוע: {start_date} עד {end_date}
+סה"כ לתשלום: ₪{order.total_price}
 
-🗓 תאריך ההזמנה: {order_date.strftime('%Y-%m-%d')}{event_info}
+הפריטים שאושרו:
+{items_text}
 
-💰 סך הכול לתשלום: {total_price}₪
+נתראה ביום האירוע!
 
-נצור איתך קשר לתיאום המסירה ופרטים נוספים 😊
+תודה,
+צוות Wedding Dreams 💍"""
 
-מאחלים לכם חתונה מושלמת ובלתי נשכחת! �
-– צוות Wedding Planner �
-"""
-    send_email(to_email, subject, body)
+        send_email(to_email, subject, body)
+        
+    except Exception as e:
+        logger.error(f"Error building approved email for order {order_id}: {str(e)}", exc_info=True)
 
 def send_return_reminder_email(to_email, name, return_date, item_names):
     subject = "📩 תזכורת להחזרת ציוד בקרוב"
@@ -168,20 +226,50 @@ https://forms.gle/ZRr8bH1BFWrdsix47
 """
     send_email(to_email, subject, body)
 
-def send_booking_rejected_email(to_email, name, items):
+def send_booking_rejected_email(to_email, name, order_id):
+    """Send booking rejected email with MongoDB data"""
+    from models import Order, Cart, Item
+    
     subject = "ההזמנה שלך לא אושרה ❌"
-    item_list = "\n".join([f"- {item}" for item in items])
-    body = f"""שלום {name},
+    
+    try:
+        # Get order details
+        order = Order.find_by_id(order_id)
+        if not order:
+            logger.error(f"Order {order_id} not found for email")
+            return
+            
+        # Get cart and items
+        cart = Cart.find_by_id(order.cart_id)
+        if not cart:
+            logger.error(f"Cart {order.cart_id} not found for email")
+            return
+            
+        # Build items list
+        item_list = []
+        for cart_item in cart.items:
+            item = Item.find_by_id(cart_item['item_id'])
+            if item:
+                item_list.append(f"- {item.name} (כמות: {cart_item['amount']})")
+        
+        items_text = "\n".join(item_list) if item_list else "לא נמצאו פריטים"
+        
+        body = f"""שלום {name},
 
-לצערנו, ההזמנה שביקשת דרך Wedding Dreams לא אושרה.  
-הפריטים שביקשת היו:
+לצערנו, ההזמנה שלך לא אושרה ❌
 
-{item_list}
+פרטי ההזמנה:
+מספר הזמנה: {order_id}
 
-אם יש שאלה או צורך בעזרה – אנחנו כאן בשבילך.  
-מוזמן/ת לפנות אלינו בכל עת.
+הפריטים שנדחו:
+{items_text}
 
-תודה שבחרת ב-Wedding Dreams �  
-– צוות Wedding Dreams
-"""
-    send_email(to_email, subject, body)
+אם יש שאלה או צורך בעזרה - אנחנו כאן בשבילך.
+
+תודה,
+צוות Wedding Dreams 💍"""
+
+        send_email(to_email, subject, body)
+        
+    except Exception as e:
+        logger.error(f"Error building rejected email for order {order_id}: {str(e)}", exc_info=True)

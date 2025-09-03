@@ -43,28 +43,10 @@ def is_valid_email(email):
 
 
 def is_valid_password(password):
-    # check the length of the password
-    if len(password) > 10 or len(password) < 5:
-        return {"error": "PASSWORD_LENGTH_MUST_BE_BETWEEN_5_AND_10_CHARACTERS"}, 400
-
-    # PASSWORD MUST START WITH AN UPPERCASE LETTER
-    if not re.match(r"^[A-Z]", password):
-        return {"error": "PASSWORD_MUST_START_WITH_AN_UPPERCASE_LETTER"}, 400
-
-    if not re.search(r"[a-z]", password):
-        return {"error": "PASSWORD_MUST_CONTAIN_AT_LEAST_ONE_LOWERCASE_LETTER"}, 400
-
-    # PASSWORD MUST CONTAIN AT LEAST ONE DIGIT
-    if not re.search(r"[0-9]", password):
-        return {"error": "PASSWORD_MUST_CONTAIN_AT_LEAST_ONE_DIGIT"}, 400
-
-    # PASSWORD MUST CONTAIN AT LEAST ONE SPECIAL CHARACTER
-    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
-        return {"error": "PASSWORD_MUST_CONTAIN_AT_LEAST_ONE_SPECIAL_CHARACTER"}, 400
-
-    # PASSWORD MUST NOT CONTAIN SPACES
-    if re.search(r"\s", password):
-        return {"error": "PASSWORD_MUST_NOT_CONTAIN_SPACES"}, 400
+    """Simple password validation - only check minimum length"""
+    # Check minimum length (more than 4 characters)
+    if len(password) < 5:
+        return {"error": "PASSWORD_MUST_BE_AT_LEAST_5_CHARACTERS"}, 400
 
     # PASSWORD_IS_VALID
     return None
