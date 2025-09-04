@@ -184,7 +184,7 @@ const UsersManagement = () => {
 
   // פונקציה למחיקת משתמש בודד
   const deleteUser = async (userId) => {
-    if (!window.confirm("האם אתה בטוח שברצונך למחוק משתמש זה? פעולה זו בלתי הפיכה!")) {
+    if (!window.confirm("האם אתה בטוח שברצונך למחוק משתמש זה? פעולה זו תמחק גם את כל ההזמנות הפעילות של המשתמש ולא ניתן לבטל אותה!")) {
       return;
     }
 
@@ -193,12 +193,31 @@ const UsersManagement = () => {
       const response = await api.delete(`${EP_USERS_DELETE}${userId}`);
       
       if (response.status === 200) {
-        alert("המשתמש נמחק בהצלחה");
+        const data = response.data;
+        let message = "המשתמש נמחק בהצלחה";
+        
+        if (data.deleted_orders && data.deleted_orders > 0) {
+          message += `\nנמחקו גם ${data.deleted_orders} הזמנות של המשתמש`;
+        }
+        
+        if (data.user_name) {
+          message += `\nמשתמש: ${data.user_name}`;
+        }
+        
+        if (data.user_email) {
+          message += `\nאימייל: ${data.user_email}`;
+        }
+        
+        alert(message);
         fetchUsers(); // רענון הטבלה
       }
     } catch (error) {
       if (error.response && error.response.data) {
-        setErrorMessage(error.response.data.error);
+        if (error.response.data.error === "USER_HAS_ACTIVE_ORDERS") {
+          setErrorMessage("לא ניתן למחוק משתמש עם הזמנות פעילות");
+        } else {
+          setErrorMessage(error.response.data.error);
+        }
       } else {
         setErrorMessage("אירעה שגיאה במחיקת המשתמש");
       }

@@ -361,45 +361,58 @@ def delete_user(user_id):
     claims = get_jwt()
     if int(claims.get("permission", 0)) > 2:
         try:
-            # Check if user has active orders first
+            # Import required models
             from models import Order, Cart
             
             # Find user's carts
             user_carts = Cart.find_all({"user_id": user_id})
             cart_ids = [cart._id for cart in user_carts]
             
+            deleted_orders_count = 0
+            
             if cart_ids:
-                # Check for active orders
-                active_orders = Order.find_all({
-                    "cart_id": {"$in": cart_ids},
-                    "status": {"$nin": ["COMPLETED", "CANCELLED"]}
+                # Find and delete ALL orders (active and completed) for this user
+                all_orders = Order.find_all({
+                    "cart_id": {"$in": cart_ids}
                 })
                 
-                if active_orders:
-                    return jsonify({"error": "USER_HAS_ACTIVE_ORDERS"}), 400
+                for order in all_orders:
+                    try:
+                        order.delete()
+                        deleted_orders_count += 1
+                        logger.info(f"Deleted order {order._id} for user {user_id}")
+                    except Exception as e:
+                        logger.error(f"Error deleting order {order._id}: {str(e)}")
 
             # Delete user
             user = User.find_by_id(user_id)
             if not user:
                 return jsonify({"error": "USER_NOT_FOUND"}), 404
+            
+            user_email = user.email
+            user_name = f"{user.first_name} {user.last_name}"
                 
             user.delete()
             
-            # Delete user's carts and completed orders
+            # Delete user's carts
             for cart in user_carts:
-                cart.delete()
+                try:
+                    cart.delete()
+                except Exception as e:
+                    logger.error(f"Error deleting cart {cart._id}: {str(e)}")
             
-            # Delete completed orders for this user
-            completed_orders = Order.find_all({
-                "cart_id": {"$in": cart_ids},
-                "status": {"$in": ["COMPLETED", "CANCELLED"]}
-            })
-            for order in completed_orders:
-                order.delete()
+            # Log the deletion
+            logger.info(f"User {user_id} ({user_email}) deleted with {deleted_orders_count} orders")
             
-            return jsonify({"message": "USER_DELETED"}), 200
+            return jsonify({
+                "message": "USER_DELETED",
+                "deleted_orders": deleted_orders_count,
+                "user_email": user_email,
+                "user_name": user_name
+            }), 200
             
         except Exception as e:
+            logger.error(f"Error deleting user {user_id}: {str(e)}")
             return jsonify({"error": f"Error deleting user: {str(e)}"}), 500
     else:
         return jsonify({"error": "FORBIDDEN"}), 403
@@ -415,40 +428,44 @@ def delete_blocked_users():
             blocked_users = User.find_all({"blocked": True})
             
             deleted_count = 0
+            total_deleted_orders = 0
+            
             for user in blocked_users:
                 try:
-                    # Check if user has active orders
+                    # Import required models
                     from models import Order, Cart
                     
                     user_carts = Cart.find_all({"user_id": user._id})
                     cart_ids = [cart._id for cart in user_carts]
                     
+                    user_deleted_orders = 0
+                    
                     if cart_ids:
-                        active_orders = Order.find_all({
-                            "cart_id": {"$in": cart_ids},
-                            "status": {"$nin": ["COMPLETED", "CANCELLED"]}
+                        # Delete ALL orders (active and completed) for this user
+                        all_orders = Order.find_all({
+                            "cart_id": {"$in": cart_ids}
                         })
                         
-                        if active_orders:
-                            continue  # Skip this user if they have active orders
+                        for order in all_orders:
+                            try:
+                                order.delete()
+                                user_deleted_orders += 1
+                                total_deleted_orders += 1
+                            except Exception as e:
+                                logger.error(f"Error deleting order {order._id}: {str(e)}")
                     
                     # Delete user and their data
                     user.delete()
                     
                     # Delete user's carts
                     for cart in user_carts:
-                        cart.delete()
-                    
-                    # Delete user's completed orders
-                    if cart_ids:
-                        completed_orders = Order.find_all({
-                            "cart_id": {"$in": cart_ids},
-                            "status": {"$in": ["COMPLETED", "CANCELLED"]}
-                        })
-                        for order in completed_orders:
-                            order.delete()
+                        try:
+                            cart.delete()
+                        except Exception as e:
+                            logger.error(f"Error deleting cart {cart._id}: {str(e)}")
                     
                     deleted_count += 1
+                    logger.info(f"Deleted blocked user {user._id} ({user.email}) with {user_deleted_orders} orders")
                     
                 except Exception as user_error:
                     logger.error(f"Error deleting user {user._id}", exc_info=True, extra={'extra_data': {
@@ -459,16 +476,19 @@ def delete_blocked_users():
             
             log_user_action("bulk_delete_blocked_users", details={
                 "deleted_count": deleted_count,
-                "total_blocked": len(blocked_users)
+                "total_blocked": len(blocked_users),
+                "total_deleted_orders": total_deleted_orders
             })
-            logger.info(f"Deleted {deleted_count} blocked users out of {len(blocked_users)} total")
             
             return jsonify({
-                "message": f"DELETED_{deleted_count}_BLOCKED_USERS"
+                "message": "BLOCKED_USERS_DELETED",
+                "deleted_count": deleted_count,
+                "total_blocked": len(blocked_users),
+                "total_deleted_orders": total_deleted_orders
             }), 200
             
         except Exception as e:
-            logger.error("Error in bulk delete blocked users", exc_info=True)
+            logger.error("Error deleting blocked users", exc_info=True)
             return jsonify({"error": f"Error deleting blocked users: {str(e)}"}), 500
     else:
         return jsonify({"error": "FORBIDDEN"}), 403
