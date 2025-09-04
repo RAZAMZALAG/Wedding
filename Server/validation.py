@@ -128,7 +128,7 @@ def validate_registration(first_name, last_name, phone, email, location, agreeme
 def is_valid_permission(value):
     try:
         value = int(value)
-        if value in [1, 2]:
+        if value in [1, 2, 3]:
             return None
         return jsonify({'error': 'INVALID_PERMISSION'}), 400
     except Exception:

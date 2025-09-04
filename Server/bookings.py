@@ -807,12 +807,12 @@ def send_booking_return_reminders():
 @booking_bp.delete('/<booking_id>')
 @jwt_required()
 def delete_booking(booking_id):
-    """Delete a booking (admin only)"""
+    """Delete a booking (admin and staff only)"""
     claims = get_jwt()
     permission = int(claims.get("permission", 0))
     
-    # Only allow admin users to delete bookings
-    if permission < 3:
+    # Only allow admin and staff users to delete bookings
+    if permission < 2:
         logger.warning(f"Unauthorized deletion attempt by user with permission {permission}")
         return jsonify({"error": "INSUFFICIENT_PERMISSIONS"}), 403
     

@@ -86,7 +86,7 @@ function AppRoutes() {
           <Route
             path={"/users"}
             element={
-              <ProtectedRoute accessPermission={2}>
+              <ProtectedRoute accessPermission={3}>
                 <UsersManagement />
               </ProtectedRoute>
             }

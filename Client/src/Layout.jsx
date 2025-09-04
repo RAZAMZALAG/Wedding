@@ -83,7 +83,7 @@ function Layout({ children }) {
       to: "/bookings",
       icon: <AdminPanelSettingsIcon />,
     },
-    permission > 1 && {
+    permission > 2 && {
       text: t("menu_admin_users"),
       to: "/users",
       icon: <GroupIcon />,
