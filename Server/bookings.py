@@ -802,3 +802,51 @@ def send_booking_return_reminders():
 
     except Exception as e:
         logger.error("Error in send_booking_return_reminders function", exc_info=True)
+
+
+@booking_bp.delete('/<booking_id>')
+@jwt_required()
+def delete_booking(booking_id):
+    """Delete a booking (admin only)"""
+    claims = get_jwt()
+    permission = int(claims.get("permission", 0))
+    
+    # Only allow admin users to delete bookings
+    if permission < 3:
+        logger.warning(f"Unauthorized deletion attempt by user with permission {permission}")
+        return jsonify({"error": "INSUFFICIENT_PERMISSIONS"}), 403
+    
+    logger.info(f"Delete booking request for booking_id: {booking_id} by admin user")
+    
+    try:
+        # Find the booking
+        booking = Order.find_by_id(booking_id)
+        if not booking:
+            logger.warning(f"Booking not found: {booking_id}")
+            return jsonify({"error": "BOOKING_NOT_FOUND"}), 404
+        
+        # Log business event before deletion
+        log_business_event(
+            "booking_deleted",
+            {
+                "booking_id": booking_id,
+                "cart_id": str(booking.cart_id),
+                "status": booking.status,
+                "total_price": booking.total_price,
+                "message": f"Booking {booking_id} deleted by admin"
+            }
+        )
+        
+        # Delete the booking
+        booking.delete()
+        
+        logger.info(f"Booking {booking_id} successfully deleted by admin")
+        
+        return jsonify({
+            "message": "Booking deleted successfully",
+            "booking_id": booking_id
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error deleting booking {booking_id}", exc_info=True)
+        return jsonify({"error": "INTERNAL_SERVER_ERROR"}), 500

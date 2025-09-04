@@ -32,6 +32,8 @@ import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import EventNoteIcon from "@mui/icons-material/EventNote";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import AssignmentTurnedInIcon from "@mui/icons-material/AssignmentTurnedIn";
+import DeleteIcon from "@mui/icons-material/Delete";
+import { useAuth } from "../context/AuthContext.jsx";
 import api from "../api.js";
 import {
   DEFAULT_PAGE_SIZE,
@@ -58,6 +60,7 @@ const tableHeadings = [
   { title: "all_bookings_status", name: "status" },
   { title: "all_bookings_start_date", name: "start_date" },
   { title: "all_bookings_end_date", name: "end_date" },
+  { title: "all_bookings_actions", name: "actions" },
 ];
 
 const typeMapping = {
@@ -69,6 +72,7 @@ const typeMapping = {
 };
 
 const AllBookings = () => {
+  const { currentUser } = useAuth();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoadings, setActionLoadings] = useState(() =>
@@ -242,6 +246,79 @@ const AllBookings = () => {
     } catch (error) {
       setErrorMessage("Failed to update end date");
     } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteBooking = async (bookingIndex) => {
+    const booking = bookings[bookingIndex];
+    const bookingId = booking._id || booking.id;
+    
+    console.log("Starting delete for booking:", {
+      bookingIndex,
+      bookingId,
+      booking,
+      EP_BOOKINGS,
+      currentUser: currentUser?.permission
+    });
+    
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      `האם אתה בטוח שברצונך למחוק את ההזמנה של ${booking.user.first_name} ${booking.user.last_name}?`
+    );
+    
+    if (!confirmed) return;
+
+    try {
+      setLoading(true);
+      setActionLoading(true, bookingIndex);
+      
+      const deleteUrl = `${EP_BOOKINGS}${bookingId}`;
+      console.log("Making DELETE request to:", deleteUrl);
+      console.log("Full URL:", api.defaults.baseURL + deleteUrl);
+      console.log("Has token:", !!localStorage.getItem('ACCESS_TOKEN'));
+      
+      // Delete the booking
+      const response = await api.delete(deleteUrl);
+      
+      console.log("DELETE response:", {
+        status: response.status,
+        data: response.data
+      });
+
+      if (response.status === 200) {
+        // Remove the booking from the state
+        setBookings((prevState) => 
+          prevState.filter((_, index) => index !== bookingIndex)
+        );
+        
+        // Update total bookings count
+        setTotalBookings(prev => prev - 1);
+        
+        // If we're on the last page and it becomes empty, go to previous page
+        if (bookings.length === 1 && currentPage > 1) {
+          setCurrentPage(currentPage - 1);
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting booking:", error);
+      console.error("Error name:", error.name);
+      console.error("Error message:", error.message);
+      console.error("Error config:", error.config);
+      console.error("Error response:", error.response);
+      console.error("Error response data:", error.response?.data);
+      console.error("Error status:", error.response?.status);
+      console.error("Error request:", error.request);
+      
+      if (error.response?.status === 404) {
+        setErrorMessage("ההזמנה לא נמצאה");
+      } else if (error.response?.status === 403) {
+        setErrorMessage("אין הרשאה למחוק הזמנה זו");
+      } else {
+        setErrorMessage(`שגיאה במחיקת ההזמנה: ${error.response?.data?.error || error.message}`);
+      }
+    } finally {
+      setActionLoading(false, bookingIndex);
       setLoading(false);
     }
   };
@@ -541,6 +618,21 @@ const AllBookings = () => {
                         />
                       }
                     />
+                  </TableCell>
+                  {/* Actions column */}
+                  <TableCell>
+                    <IconButton
+                      onClick={() => {
+                        console.log("Delete button clicked for booking index:", index);
+                        deleteBooking(index);
+                      }}
+                      disabled={actionLoadings[index]}
+                      color="error"
+                      size="small"
+                      title="מחק הזמנה"
+                    >
+                      <DeleteIcon />
+                    </IconButton>
                   </TableCell>
                 </TableRow>
               );
