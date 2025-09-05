@@ -2,10 +2,8 @@ services:
   server: # Flask App
     build:
       context: .
-    command:
-      ["gunicorn", "--bind", "0.0.0.0:${CLIENT_PORT}", "main:create_app()"]
     ports:
-      - ${CLIENT_PORT}:${CLIENT_PORT}
+      - ${CLIENT_PORT:-5000}:${CLIENT_PORT:-5000}
     networks:
       - app-network
     container_name: wedding-server
@@ -17,6 +15,7 @@ services:
       - SECRET_KEY=your-secret-key-for-development
       - JWT_SECRET_KEY=your-jwt-secret-key
       - CLIENT_URL=http://localhost:5173
+      - CLIENT_PORT=${CLIENT_PORT:-5000}
 
   mongodb: # MongoDB Database
     image: mongo:latest

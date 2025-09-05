@@ -194,3 +194,7 @@ if __name__ == "__main__":
     
     logger.info(f"Starting Wedding Planner application on port {port}")
     application.run(host='0.0.0.0', port=port, debug=os.getenv('FLASK_ENV') != 'production')
+
+
+# For gunicorn
+app = create_app()
