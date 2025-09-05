@@ -221,6 +221,7 @@ const Catalog = () => {
       if (!controller.signal.aborted) {
         if (response.status === HttpStatusCode.Ok) {
           console.log("✅ Items received:", response.data.items?.length, "items");
+          console.log("📊 Total items from server:", response.data.total || response.data.total_items);
           // Log first item with available_amount for debugging
           if (response.data.items?.[0]) {
             console.log("🔍 Sample item data:", {
@@ -231,7 +232,7 @@ const Catalog = () => {
             });
           }
           setItems(response.data.items || []);
-          setTotalItems(response.data.total_items || 0);
+          setTotalItems(response.data.total || response.data.total_items || 0);
           setCategories(response.data.categories || []);
         }
       }
@@ -1136,15 +1137,28 @@ const Catalog = () => {
         </Box>
       )}
       {/* Pagination */}
-      {totalItems > 0 && (
-        <Box display="flex" justifyContent="center" mt={2} pt={2}>
-          <Pagination
-            sx={{ marginBottom: "15px" }}
-            count={Math.ceil(totalItems / itemsPerPage)}
-            page={currentPage}
-            onChange={handlePageChange}
-            color="primary"
-          />
+      {totalItems > itemsPerPage && (
+        <Box display="flex" justifyContent="center" mt={4} mb={3}>
+          <Paper elevation={1} sx={{ p: 2, borderRadius: 2 }}>
+            <Stack spacing={2} alignItems="center">
+              <Typography variant="body2" color="text.secondary">
+                {t("showing_items", { 
+                  start: ((currentPage - 1) * itemsPerPage) + 1,
+                  end: Math.min(currentPage * itemsPerPage, totalItems),
+                  total: totalItems 
+                })}
+              </Typography>
+              <Pagination
+                count={Math.ceil(totalItems / itemsPerPage)}
+                page={currentPage}
+                onChange={handlePageChange}
+                color="primary"
+                size="large"
+                showFirstButton
+                showLastButton
+              />
+            </Stack>
+          </Paper>
         </Box>
       )}
       <Dialog

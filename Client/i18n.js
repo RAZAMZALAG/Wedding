@@ -123,6 +123,7 @@ i18n.use(initReactI18next).init({
         catalog_delete_item_error: "שגיאה במחיקת פריט",
         catalog_file_invalid: "קובץ בפורמט לא תקין. יש להעלות JPG או PNG בלבד.",
         catalog_file_too_large: "הקובץ גדול מדי. עד 5MB בלבד.",
+        showing_items: "מציג {{start}}-{{end}} מתוך {{total}} פריטים",
         cart_title: "סל השכרות",
         cart_empty: "סל ההשכרות שלך ריק",
         cart_total: "סך הכל: {{count}} פריטים",
@@ -517,6 +518,7 @@ i18n.use(initReactI18next).init({
         catalog_file_invalid:
           "Invalid file format. Please upload JPG or PNG only.",
         catalog_file_too_large: "File is too large. Up to 5MB only.",
+        showing_items: "Showing {{start}}-{{end}} of {{total}} items",
         cart_title: "Loan Cart",
         cart_empty: "Your loan cart is empty",
         cart_total: "Total: {{count}} items",
