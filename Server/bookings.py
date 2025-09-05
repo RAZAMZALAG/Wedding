@@ -834,6 +834,222 @@ def send_booking_return_reminders():
         logger.error("Error in send_booking_return_reminders function", exc_info=True)
 
 
+@booking_bp.post('/check-availability')
+@jwt_required()
+def check_cart_availability():
+    """Check availability for cart items across date ranges"""
+    try:
+        data = request.get_json()
+        
+        # Get date range parameters
+        start_date_str = data.get('start_date')
+        end_date_str = data.get('end_date')
+        
+        if not start_date_str or not end_date_str:
+            return jsonify({"error": "MISSING_DATES"}), 400
+
+        # Parse dates
+        try:
+            start_date = datetime.fromisoformat(start_date_str).date()
+            end_date = datetime.fromisoformat(end_date_str).date()
+        except ValueError:
+            return jsonify({"error": "INVALID_DATE_FORMAT"}), 400
+
+        # Get user's active cart
+        user_cart = Cart.get_user_cart(current_user._id)
+        if not user_cart or not user_cart.items:
+            return jsonify({"available": True, "message": "EMPTY_CART"}), 200
+
+        # Check availability for each item in cart
+        availability_details = []
+        all_available = True
+
+        for cart_item in user_cart.items:
+            item = Item.find_by_id(cart_item['item_id'])
+            if not item:
+                return jsonify({"error": f"ITEM_NOT_FOUND: {cart_item['item_id']}"}), 404
+
+            # Check availability for this item (excluding current user's locks)
+            available_amount = get_available_amount_for_dates(
+                item._id, start_date, end_date, item.total_amount,
+                exclude_user_id=current_user._id, exclude_cart_id=user_cart._id
+            )
+            
+            requested_amount = cart_item.get('amount', cart_item.get('quantity', 1))
+            is_available = requested_amount <= available_amount
+
+            availability_details.append({
+                "item_id": item._id,
+                "item_name": item.name,
+                "requested": requested_amount,
+                "available": available_amount,
+                "is_available": is_available
+            })
+
+            if not is_available:
+                all_available = False
+
+        return jsonify({
+            "available": all_available,
+            "start_date": start_date_str,
+            "end_date": end_date_str,
+            "details": availability_details
+        }), 200
+
+    except Exception as e:
+        logger.error("Error checking cart availability", exc_info=True)
+        return jsonify({"error": f"Error checking availability: {str(e)}"}), 500
+
+
+@booking_bp.post('/available-date-ranges')
+@jwt_required()
+def get_available_date_ranges():
+    """Get available date ranges for cart items within a specific period"""
+    try:
+        data = request.get_json()
+        
+        # Get parameters
+        range_start_str = data.get('range_start')  # Start of the period to check
+        range_end_str = data.get('range_end')      # End of the period to check
+        
+        if not range_start_str or not range_end_str:
+            # Default to next 6 months
+            range_start = date.today()
+            range_end = range_start + timedelta(days=180)
+        else:
+            try:
+                range_start = datetime.fromisoformat(range_start_str).date()
+                range_end = datetime.fromisoformat(range_end_str).date()
+            except ValueError:
+                return jsonify({"error": "INVALID_DATE_FORMAT"}), 400
+
+        # Get user's active cart
+        user_cart = Cart.get_user_cart(current_user._id)
+        if not user_cart or not user_cart.items:
+            # If cart is empty, all dates are available
+            return jsonify({
+                "available_dates": [],
+                "message": "EMPTY_CART"
+            }), 200
+
+        # Check each day in the range
+        available_dates = []
+        current_check_date = range_start
+
+        while current_check_date <= range_end:
+            # Skip weekends and other business rules if needed
+            if current_check_date.weekday() not in [5, 6]:  # Skip Saturday (5) and Sunday (6)
+                
+                # Check if all items are available for this single day
+                all_available_for_date = True
+                
+                for cart_item in user_cart.items:
+                    item = Item.find_by_id(cart_item['item_id'])
+                    if not item:
+                        continue
+
+                    # Check availability for this item on this specific date
+                    available_amount = get_available_amount_for_dates(
+                        item._id, current_check_date, current_check_date, item.total_amount,
+                        exclude_user_id=current_user._id, exclude_cart_id=user_cart._id
+                    )
+                    
+                    requested_amount = cart_item.get('amount', cart_item.get('quantity', 1))
+                    
+                    if requested_amount > available_amount:
+                        all_available_for_date = False
+                        break
+
+                if all_available_for_date:
+                    available_dates.append(current_check_date.isoformat())
+
+            current_check_date += timedelta(days=1)
+
+        return jsonify({
+            "available_dates": available_dates,
+            "range_start": range_start.isoformat(),
+            "range_end": range_end.isoformat(),
+            "cart_items_count": len(user_cart.items)
+        }), 200
+
+    except Exception as e:
+        logger.error("Error getting available date ranges", exc_info=True)
+        return jsonify({"error": f"Error getting available dates: {str(e)}"}), 500
+
+
+@booking_bp.post('/check-date-range')
+@jwt_required()
+def check_date_range_availability():
+    """Check if a specific date range is available for all cart items"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ['start_date', 'end_date']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({"error": f"MISSING_FIELD: {field}"}), 400
+
+        # Parse dates
+        try:
+            start_date = datetime.fromisoformat(data['start_date']).date()
+            end_date = datetime.fromisoformat(data['end_date']).date()
+        except ValueError:
+            return jsonify({"error": "INVALID_DATE_FORMAT"}), 400
+
+        if start_date > end_date:
+            return jsonify({"error": "INVALID_DATE_RANGE"}), 400
+
+        # Get user's active cart
+        user_cart = Cart.get_user_cart(current_user._id)
+        if not user_cart or not user_cart.items:
+            return jsonify({
+                "available": True,
+                "message": "EMPTY_CART"
+            }), 200
+
+        # Check each item in the cart for the entire date range
+        availability_details = []
+        all_available = True
+
+        for cart_item in user_cart.items:
+            item = Item.find_by_id(cart_item['item_id'])
+            if not item:
+                return jsonify({"error": f"ITEM_NOT_FOUND: {cart_item['item_id']}"}), 404
+
+            # Check availability for this item across the entire date range
+            available_amount = get_available_amount_for_dates(
+                item._id, start_date, end_date, item.total_amount,
+                exclude_user_id=current_user._id, exclude_cart_id=user_cart._id
+            )
+            
+            requested_amount = cart_item.get('amount', cart_item.get('quantity', 1))
+            is_available = requested_amount <= available_amount
+
+            availability_details.append({
+                "item_id": item._id,
+                "item_name": item.name,
+                "requested": requested_amount,
+                "available": available_amount,
+                "is_available": is_available
+            })
+
+            if not is_available:
+                all_available = False
+
+        return jsonify({
+            "available": all_available,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "details": availability_details,
+            "range_days": (end_date - start_date).days + 1
+        }), 200
+
+    except Exception as e:
+        logger.error("Error checking date range availability", exc_info=True)
+        return jsonify({"error": f"Error checking date range: {str(e)}"}), 500
+
+
 @booking_bp.post('/lock-items')
 @jwt_required()
 def lock_items_temporarily():
