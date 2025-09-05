@@ -27,6 +27,7 @@ import "react-datepicker/dist/react-datepicker.css";
 import api from "../api.js"; // instead of axios
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { EP_LOCK_ITEMS, EP_EXTEND_LOCKS, EP_RELEASE_LOCKS } from "../constants.js";
 
 const BookingStepperDialog = ({
   openDialog,
@@ -43,9 +44,22 @@ const BookingStepperDialog = ({
   const [unitCount, setUnitCount] = useState(0); // Number of valid booking days
   const [itemsWithBookings, setItemsWithBookings] = useState([]);
   const [bookingsLoading, setBookingsLoading] = useState(false); // Loading state for bookings
+  const [itemsLocked, setItemsLocked] = useState(false); // Track if items are locked
+  const [lockExtensionTimer, setLockExtensionTimer] = useState(null); // Timer for extending locks
 
   // Function to go to the next step
-  const handleNext = () => {
+  const handleNext = async () => {
+    // If moving from date selection step to review step, lock the items
+    if (activeStep === 0 && startDate && endDate && !itemsLocked) {
+      try {
+        await lockItems();
+        setItemsLocked(true);
+      } catch (error) {
+        console.error("Failed to lock items:", error);
+        // You might want to show an error message to the user here
+        return; // Don't proceed to next step if locking failed
+      }
+    }
     setActiveStep((prevStep) => prevStep + 1);
   };
 
@@ -53,6 +67,87 @@ const BookingStepperDialog = ({
   const handleBack = () => {
     setActiveStep((prevStep) => prevStep - 1);
   };
+
+  // Function to lock items temporarily
+  const lockItems = async () => {
+    try {
+      const response = await api.post(EP_LOCK_ITEMS, {
+        start_date: getDateOnly(startDate),
+        end_date: getDateOnly(endDate),
+        session_id: Date.now().toString() // Simple session ID
+      });
+      
+      if (response.status === 201) {
+        console.log("Items locked successfully:", response.data);
+        // Set up timer to extend locks every 25 minutes
+        setupLockExtensionTimer();
+        return response.data;
+      }
+    } catch (error) {
+      console.error("Error locking items:", error);
+      throw error;
+    }
+  };
+
+  // Function to extend lock expiration
+  const extendLocks = async () => {
+    try {
+      await api.post(EP_EXTEND_LOCKS, {
+        additional_minutes: 30
+      });
+      console.log("Locks extended successfully");
+    } catch (error) {
+      console.error("Error extending locks:", error);
+    }
+  };
+
+  // Function to release locks
+  const releaseLocks = async () => {
+    try {
+      await api.delete(EP_RELEASE_LOCKS);
+      console.log("Locks released successfully");
+      setItemsLocked(false);
+      if (lockExtensionTimer) {
+        clearInterval(lockExtensionTimer);
+        setLockExtensionTimer(null);
+      }
+    } catch (error) {
+      console.error("Error releasing locks:", error);
+    }
+  };
+
+  // Setup timer to extend locks periodically
+  const setupLockExtensionTimer = () => {
+    if (lockExtensionTimer) {
+      clearInterval(lockExtensionTimer);
+    }
+    
+    const timer = setInterval(() => {
+      extendLocks();
+    }, 25 * 60 * 1000); // Extend every 25 minutes
+    
+    setLockExtensionTimer(timer);
+  };
+
+  // Handle dialog close - release locks
+  const handleDialogClose = () => {
+    if (itemsLocked) {
+      releaseLocks();
+    }
+    setOpenDialog(false);
+  };
+
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      if (lockExtensionTimer) {
+        clearInterval(lockExtensionTimer);
+      }
+      if (itemsLocked) {
+        releaseLocks();
+      }
+    };
+  }, [lockExtensionTimer, itemsLocked]);
 
   // Function to count the valid booking days (Sunday, Tuesday, Thursday) between start and end dates
   const calculateUnitCount = (start, end) => {
@@ -102,9 +197,20 @@ const BookingStepperDialog = ({
   };
 
   // Handle booking confirmation and pass data back to Cart for submission
-  const handleBooking = () => {
-    handleSubmitBooking(getDateOnly(startDate), getDateOnly(endDate)); // Pass finalPrice to submit the booking
-    setOpenDialog(false); // Close the dialog after booking
+  const handleBooking = async () => {
+    try {
+      await handleSubmitBooking(getDateOnly(startDate), getDateOnly(endDate)); // Pass finalPrice to submit the booking
+      // Locks will be released automatically when the order is created on the server
+      setItemsLocked(false);
+      if (lockExtensionTimer) {
+        clearInterval(lockExtensionTimer);
+        setLockExtensionTimer(null);
+      }
+      setOpenDialog(false); // Close the dialog after booking
+    } catch (error) {
+      console.error("Error submitting booking:", error);
+      // Keep locks in case of error, user might want to try again
+    }
   };
 
   function isDateForbidden(date, items) {
@@ -191,7 +297,7 @@ const BookingStepperDialog = ({
   return (
     <Dialog
       open={openDialog}
-      onClose={() => setOpenDialog(false)}
+      onClose={handleDialogClose}
       fullWidth
       fullScreen={isMobile} // <-- Add this
     >
@@ -360,7 +466,7 @@ const BookingStepperDialog = ({
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={() => setOpenDialog(false)} color="primary">
+        <Button onClick={handleDialogClose} color="primary">
           {t("booking_close")}
         </Button>
       </DialogActions>

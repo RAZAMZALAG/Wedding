@@ -27,6 +27,7 @@ import "react-datepicker/dist/react-datepicker.css";
 import api from "../api.js";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { EP_LOCK_ITEMS, EP_EXTEND_LOCKS, EP_RELEASE_LOCKS, EP_CHECK_AVAILABILITY, EP_AVAILABLE_DATE_RANGES, EP_CHECK_DATE_RANGE } from "../constants.js";
 
 const OrderStepperDialog = ({
   openDialog,
@@ -43,15 +44,216 @@ const OrderStepperDialog = ({
   const [itemsWithOrders, setItemsWithOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [customerNotes, setCustomerNotes] = useState("");
+  const [itemsLocked, setItemsLocked] = useState(false); // Track if items are locked
+  const [lockExtensionTimer, setLockExtensionTimer] = useState(null); // Timer for extending locks
+  const [availableDates, setAvailableDates] = useState([]); // Available dates for calendar
+  const [availabilityLoading, setAvailabilityLoading] = useState(false); // Loading state for availability check
+  const [dateRangeValid, setDateRangeValid] = useState(true); // Is the selected date range valid
+  const [rangeCheckLoading, setRangeCheckLoading] = useState(false); // Loading state for range validation
 
   // Function to go to the next step
-  const handleNext = () => {
+  const handleNext = async () => {
+    // If moving from date selection step to review step, lock the items
+    if (activeStep === 0 && startDate && endDate && !itemsLocked) {
+      try {
+        await lockItems();
+        setItemsLocked(true);
+      } catch (error) {
+        console.error("Failed to lock items:", error);
+        // You might want to show an error message to the user here
+        return; // Don't proceed to next step if locking failed
+      }
+    }
     setActiveStep((prevStep) => prevStep + 1);
   };
 
   // Function to go to the previous step
   const handleBack = () => {
     setActiveStep((prevStep) => prevStep - 1);
+  };
+
+  // Function to lock items temporarily
+  const lockItems = async () => {
+    try {
+      const response = await api.post(EP_LOCK_ITEMS, {
+        start_date: getDateOnly(startDate),
+        end_date: getDateOnly(endDate),
+        session_id: Date.now().toString() // Simple session ID
+      });
+      
+      if (response.status === 201) {
+        console.log("Items locked successfully:", response.data);
+        // Set up timer to extend locks every 25 minutes
+        setupLockExtensionTimer();
+        return response.data;
+      }
+    } catch (error) {
+      console.error("Error locking items:", error);
+      throw error;
+    }
+  };
+
+  // Function to extend lock expiration
+  const extendLocks = async () => {
+    try {
+      await api.post(EP_EXTEND_LOCKS, {
+        additional_minutes: 30
+      });
+      console.log("Locks extended successfully");
+    } catch (error) {
+      console.error("Error extending locks:", error);
+    }
+  };
+
+  // Function to release locks
+  const releaseLocks = async () => {
+    try {
+      await api.delete(EP_RELEASE_LOCKS);
+      console.log("Locks released successfully");
+      setItemsLocked(false);
+      if (lockExtensionTimer) {
+        clearInterval(lockExtensionTimer);
+        setLockExtensionTimer(null);
+      }
+    } catch (error) {
+      console.error("Error releasing locks:", error);
+    }
+  };
+
+  // Setup timer to extend locks periodically
+  const setupLockExtensionTimer = () => {
+    if (lockExtensionTimer) {
+      clearInterval(lockExtensionTimer);
+    }
+    
+    const timer = setInterval(() => {
+      extendLocks();
+    }, 25 * 60 * 1000); // Extend every 25 minutes
+    
+    setLockExtensionTimer(timer);
+  };
+
+  // Handle dialog close - release locks
+  const handleDialogClose = () => {
+    if (itemsLocked) {
+      releaseLocks();
+    }
+    setOpenDialog(false);
+  };
+
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      if (lockExtensionTimer) {
+        clearInterval(lockExtensionTimer);
+      }
+      if (itemsLocked) {
+        releaseLocks();
+      }
+    };
+  }, [lockExtensionTimer, itemsLocked]);
+
+  // Function to load available dates
+  const loadAvailableDates = async () => {
+    try {
+      setAvailabilityLoading(true);
+      
+      // Calculate date range (next 6 months)
+      const today = new Date();
+      const sixMonthsLater = new Date();
+      sixMonthsLater.setMonth(today.getMonth() + 6);
+      
+      const response = await api.post(EP_AVAILABLE_DATE_RANGES, {
+        range_start: today.toISOString().split('T')[0],
+        range_end: sixMonthsLater.toISOString().split('T')[0]
+      });
+      
+      if (response.status === 200) {
+        const availableDateStrings = response.data.available_dates || [];
+        // Keep as string array for more consistent comparison
+        setAvailableDates(availableDateStrings);
+        console.log("📅 Loaded available dates:", availableDateStrings.length, "dates");
+        console.log("📅 First few available dates:", availableDateStrings.slice(0, 5));
+      }
+    } catch (error) {
+      console.error("Error loading available dates:", error);
+      setAvailableDates([]); // Fallback to no restrictions
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  };
+
+  // Function to check if a date range is available for all cart items
+  const checkDateRangeAvailability = async (start, end) => {
+    if (!start || !end) {
+      setDateRangeValid(true);
+      return;
+    }
+
+    try {
+      setRangeCheckLoading(true);
+      const response = await api.post(EP_CHECK_DATE_RANGE, {
+        start_date: start.toISOString().split('T')[0],
+        end_date: end.toISOString().split('T')[0]
+      });
+      
+      if (response.status === 200) {
+        setDateRangeValid(response.data.available);
+        console.log("📅 Date range check:", response.data.available ? "✅ Available" : "❌ Not available", response.data);
+      }
+    } catch (error) {
+      console.error("Error checking date range:", error);
+      setDateRangeValid(false); // Default to not available on error
+    } finally {
+      setRangeCheckLoading(false);
+    }
+  };
+
+  // Load available dates when dialog opens and items change
+  useEffect(() => {
+    if (openDialog && items && items.length > 0) {
+      loadAvailableDates();
+    }
+  }, [openDialog, items]);
+
+  // Check date range availability when dates change
+  useEffect(() => {
+    if (startDate && endDate) {
+      checkDateRangeAvailability(startDate, endDate);
+    } else {
+      setDateRangeValid(true); // Reset validation when no dates selected
+    }
+  }, [startDate, endDate]);
+
+  // Function to check if a date is available
+  const isDateAvailable = (date) => {
+    if (!date || availableDates.length === 0) {
+      return true; // If no restrictions loaded, allow all dates (fallback)
+    }
+    
+    // Check if this date is in the available dates list (compare strings)
+    const dateString = date.toISOString().split('T')[0];
+    return availableDates.includes(dateString);
+  };
+
+  // Function to check if a date should be disabled in calendar
+  const isDateDisabled = (date) => {
+    // Don't allow dates in the past
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (date < today) return true;
+
+    // Don't allow dates too far in the future (1 year)
+    const oneYearFromNow = new Date();
+    oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+    if (date > oneYearFromNow) return true;
+
+    // Temporarily disable availability checking to debug the calendar
+    // TODO: Re-enable this once calendar works
+    // Check availability based on cart items
+    // return !isDateAvailable(date);
+    
+    return false; // Allow all dates for now
   };
 
   // Reset the dialog state
@@ -62,10 +264,22 @@ const OrderStepperDialog = ({
     setItemsWithOrders([]);
     setOrdersLoading(false);
     setCustomerNotes("");
+    setItemsLocked(false);
+    setAvailableDates([]);
+    setAvailabilityLoading(false);
+    setDateRangeValid(true);
+    setRangeCheckLoading(false);
+    if (lockExtensionTimer) {
+      clearInterval(lockExtensionTimer);
+      setLockExtensionTimer(null);
+    }
   };
 
   // When the dialog is closed, reset the state
   const handleCloseDialog = () => {
+    if (itemsLocked) {
+      releaseLocks();
+    }
     setOpenDialog(false);
     resetDialog();
   };
@@ -99,31 +313,33 @@ const OrderStepperDialog = ({
   };
 
   // Handle order confirmation and pass data back to Cart for submission
-  const handleOrder = () => {
-    handleSubmitOrder(getDateOnly(startDate), getDateOnly(endDate), customerNotes);
-    setOpenDialog(false);
+  const handleOrder = async () => {
+    try {
+      await handleSubmitOrder(getDateOnly(startDate), getDateOnly(endDate), customerNotes);
+      // Locks will be released automatically when the order is created on the server
+      setItemsLocked(false);
+      if (lockExtensionTimer) {
+        clearInterval(lockExtensionTimer);
+        setLockExtensionTimer(null);
+      }
+      setOpenDialog(false);
+    } catch (error) {
+      console.error("Error submitting order:", error);
+      // Keep locks in case of error, user might want to try again
+    }
   };
 
   // Check if event date is valid (not in the past, not on weekends, etc.)
   const isDateForbidden = (date) => {
-    // Don't allow dates in the past
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (date < today) return true;
-
-    // Don't allow dates too far in the future (optional business rule)
-    const maxDate = new Date();
-    maxDate.setFullYear(maxDate.getFullYear() + 2); // 2 years ahead
-    if (date > maxDate) return true;
-
-    return false;
+    // Use the new availability-based date checking
+    return isDateDisabled(date);
   };
 
   // Validate if we can proceed to next step
   const canProceedToNext = () => {
     switch (activeStep) {
       case 0: // Date selection
-        return startDate && endDate && !isDateForbidden(startDate) && !isDateForbidden(endDate);
+        return startDate && endDate && !isDateForbidden(startDate) && !isDateForbidden(endDate) && dateRangeValid && !rangeCheckLoading;
       case 1: // Review step
         return true;
       default:
@@ -173,6 +389,35 @@ const OrderStepperDialog = ({
                   {t("select_event_date_desc")}
                 </Typography>
                 
+                {/* Show loading indicator while checking availability */}
+                {availabilityLoading && (
+                  <Box display="flex" justifyContent="center" alignItems="center" sx={{ mb: 2 }}>
+                    <CircularProgress size={24} sx={{ mr: 1 }} />
+                    <Typography variant="body2" color="text.secondary">
+                      {t("checking_availability", { defaultValue: "בודק זמינות תאריכים..." })}
+                    </Typography>
+                  </Box>
+                )}
+                
+                {/* Show availability info */}
+                {!availabilityLoading && availableDates.length > 0 && (
+                  <Typography variant="body2" color="info.main" sx={{ mb: 2 }}>
+                    ✅ {availableDates.length} {t("available_dates_found", { defaultValue: "תאריכים זמינים נמצאו" })}
+                  </Typography>
+                )}
+                
+                {!availabilityLoading && availableDates.length === 0 && items.length > 0 && (
+                  <Typography variant="body2" color="warning.main" sx={{ mb: 2 }}>
+                    ⚠️ {t("no_available_dates", { defaultValue: "לא נמצאו תאריכים זמינים עבור הפריטים הנבחרים" })}
+                  </Typography>
+                )}
+
+                {items.length === 0 && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    ℹ️ {t("add_items_first", { defaultValue: "הוסף פריטים לעגלה כדי לראות תאריכים זמינים" })}
+                  </Typography>
+                )}
+                
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={6}>
                     <Box sx={{ mb: 2 }}>
@@ -190,18 +435,55 @@ const OrderStepperDialog = ({
                         }}
                         minDate={new Date()}
                         maxDate={new Date(new Date().setFullYear(new Date().getFullYear() + 2))}
-                        filterDate={(date) => !isDateForbidden(date)}
+                        filterDate={(date) => {
+                          const isDisabled = isDateForbidden(date);
+                          // Debug: log some dates to see what's happening
+                          if (Math.random() < 0.01) { // Log only 1% of dates to avoid spam
+                            console.log("📅 filterDate:", date.toISOString().split('T')[0], "disabled:", isDisabled);
+                          }
+                          return !isDisabled;
+                        }}
                         dateFormat="dd/MM/yyyy"
                         placeholderText={t("select_date_range")}
+                        popperProps={{
+                          strategy: "fixed",
+                          placement: "bottom-start",
+                          modifiers: [
+                            {
+                              name: "preventOverflow",
+                              options: {
+                                boundary: "viewport",
+                                padding: 8,
+                              },
+                            },
+                            {
+                              name: "flip",
+                              options: {
+                                fallbackPlacements: ["top-start", "bottom-end", "top-end"],
+                              },
+                            },
+                            {
+                              name: "offset",
+                              options: {
+                                offset: [0, 4],
+                              },
+                            },
+                          ],
+                        }}
+                        popperClassName="calendar-popper"
                         customInput={
                           <TextField
                             fullWidth
                             variant="outlined"
-                            error={(startDate && isDateForbidden(startDate)) || (endDate && isDateForbidden(endDate))}
+                            error={(startDate && isDateForbidden(startDate)) || (endDate && isDateForbidden(endDate)) || !dateRangeValid}
                             helperText={
                               (startDate && isDateForbidden(startDate)) || (endDate && isDateForbidden(endDate)) 
                                 ? t("date_not_available") 
-                                : ""
+                                : !dateRangeValid 
+                                  ? t("date_range_not_available", { defaultValue: "טווח התאריכים הנבחר לא זמין עבור כל הפריטים" })
+                                  : rangeCheckLoading 
+                                    ? t("checking_availability", { defaultValue: "בודק זמינות..." })
+                                    : ""
                             }
                           />
                         }
@@ -218,6 +500,19 @@ const OrderStepperDialog = ({
                     <Typography variant="body2" color="primary.main">
                       {t("rental_duration")}: {Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 3600 * 24)) + 1} {t("days")}
                     </Typography>
+                    {rangeCheckLoading ? (
+                      <Typography variant="body2" color="warning.main" sx={{ mt: 1 }}>
+                        🔄 {t("checking_availability", { defaultValue: "בודק זמינות..." })}
+                      </Typography>
+                    ) : dateRangeValid ? (
+                      <Typography variant="body2" color="success.main" sx={{ mt: 1 }}>
+                        ✅ {t("date_range_available", { defaultValue: "טווח התאריכים זמין!" })}
+                      </Typography>
+                    ) : (
+                      <Typography variant="body2" color="error.main" sx={{ mt: 1 }}>
+                        ❌ {t("date_range_not_available", { defaultValue: "טווח התאריכים לא זמין עבור כל הפריטים" })}
+                      </Typography>
+                    )}
                   </Box>
                 )}
               </Box>
