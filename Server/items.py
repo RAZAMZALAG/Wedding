@@ -273,17 +273,21 @@ def add_item():
         category = request.form.get('category')
         price = request.form.get('price')
         amount = request.form.get('amount')
+        total_amount = request.form.get('total_amount')
         hidden = request.form.get('hidden', 'false').lower() == 'true'
         image_file = request.files.get('image')
         
         logger.info("Admin creating new item", extra={
             "user_id": claims.get("user_id"),
-            "item_name": name,
+            "item_name_value": name,  # שינינו מ- item_name ל- item_name_value
             "category": category,
             "amount": amount,
+            "total_amount": total_amount,
             "price": price,
             "hidden": hidden,
-            "has_image": bool(image_file)
+            "has_image": bool(image_file),
+            "form_data_keys": list(request.form.keys()),
+            "files_keys": list(request.files.keys())
         })
         
         # Validate required fields
@@ -306,16 +310,18 @@ def add_item():
         # Validate numeric values
         try:
             amount_int = int(amount)
+            total_amount_int = int(total_amount) if total_amount else amount_int
             price_float = float(price)
-            if amount_int <= 0 or price_float <= 0:
-                raise ValueError("Amount and price must be positive")
+            if amount_int <= 0 or price_float <= 0 or total_amount_int <= 0:
+                raise ValueError("Amount, total_amount and price must be positive")
         except ValueError as e:
             logger.warning("Item creation failed - invalid numeric values", extra={
                 "amount": amount,
+                "total_amount": total_amount,
                 "price": price,
                 "error": str(e)
             })
-            return jsonify({"error": "Invalid amount or price values"}), 400
+            return jsonify({"error": "Invalid amount, total_amount or price values"}), 400
 
         # Check if category exists
         category_obj = Category.get_by_name(category)
@@ -333,7 +339,7 @@ def add_item():
             image_filename = image_file.filename
             logger.debug("Image file uploaded for item", extra={
                 "filename": image_filename,
-                "item_name": name
+                "item_name_value": name
             })
 
         # Create new item
@@ -341,7 +347,7 @@ def add_item():
             name=name,
             category=category,
             amount=amount_int,
-            total_amount=amount_int,
+            total_amount=total_amount_int,
             price=price_float,
             notes='',
             description='',
@@ -354,7 +360,7 @@ def add_item():
         
         logger.info("New item created successfully", extra={
             "item_id": str(new_item._id),
-            "name": name,
+            "item_name_value": name,
             "category": category,
             "amount": amount_int,
             "price": price_float,
@@ -369,6 +375,7 @@ def add_item():
             "category": new_item.category,
             "amount": new_item.amount,
             "total_amount": new_item.total_amount,
+            "available_amount": new_item.amount,  # Current available equals amount for new items
             "price": new_item.price,
             "notes": new_item.notes,
             "description": new_item.description,
@@ -381,7 +388,7 @@ def add_item():
         
     except Exception as e:
         logger.error("Error creating new item", extra={
-            "item_name": name if 'name' in locals() else 'unknown',
+            "item_name_value": name if 'name' in locals() else 'unknown',
             "category": category if 'category' in locals() else 'unknown',
             "user_id": claims.get("user_id")
         }, exc_info=True)
@@ -409,13 +416,29 @@ def update_item(item_id):
             })
             return jsonify({"error": "ITEM_NOT_FOUND"}), 404
 
-        data = request.get_json()
+        # Support both JSON and FormData
+        if request.content_type and 'application/json' in request.content_type:
+            data = request.get_json()
+        else:
+            # Handle FormData
+            data = {}
+            for field in request.form:
+                if field == 'hidden':
+                    data[field] = request.form.get(field, 'false').lower() == 'true'
+                elif field in ['price', 'amount', 'total_amount']:
+                    try:
+                        data[field] = float(request.form.get(field))
+                    except (ValueError, TypeError):
+                        data[field] = request.form.get(field)
+                else:
+                    data[field] = request.form.get(field)
         
         logger.info("Admin updating item", extra={
             "item_id": item_id,
             "item_name": item.name,
             "user_id": claims.get("user_id"),
-            "update_fields": list(data.keys()) if data else []
+            "update_fields": list(data.keys()) if data else [],
+            "received_data": {k: v for k, v in data.items() if k in ['amount', 'total_amount']}
         })
         
         # Track changes for logging
@@ -432,6 +455,14 @@ def update_item(item_id):
                 
                 if field == 'price':
                     new_value = float(new_value)
+                    setattr(item, field, new_value)
+                elif field == 'amount':
+                    new_value = int(new_value)
+                    setattr(item, field, new_value)
+                    # Don't automatically update total_amount when updating amount
+                    # total_amount should be updated independently if provided
+                elif field == 'total_amount':
+                    new_value = int(new_value)
                     setattr(item, field, new_value)
                 else:
                     setattr(item, field, new_value)
@@ -465,7 +496,21 @@ def update_item(item_id):
             "updated_by": claims.get("user_id")
         })
         
-        return jsonify({"message": "ITEM_UPDATED"}), 200
+        # Return the updated item data
+        updated_item = item.to_dict()
+        # Calculate available_amount based on bookings (for now, assume no date restrictions)
+        # TODO: Calculate based on actual bookings for the item
+        updated_item['available_amount'] = item.amount  # Current available amount in stock
+        
+        logger.info("Returning updated item", extra={
+            "item_id": item_id,
+            "current_amount": item.amount,
+            "total_amount": item.total_amount,
+            "available_amount_returned": updated_item['available_amount'],
+            "full_response": {k: v for k, v in updated_item.items() if k in ['amount', 'total_amount', 'available_amount']}
+        })
+        
+        return jsonify(updated_item), 200
         
     except Exception as e:
         logger.error("Error updating item", extra={
