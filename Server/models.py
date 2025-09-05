@@ -1,5 +1,5 @@
 from extensions import mongo
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 from uuid import uuid4
 import json
@@ -323,6 +323,129 @@ class Order(BaseModel):
 Booking = Order
 
 
+class TemporaryLock(BaseModel):
+    """Temporary lock model for MongoDB to prevent double bookings during checkout"""
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._collection_name = 'temporary_locks'
+        
+        # Convert string dates to date objects if needed
+        if hasattr(self, 'start_date') and isinstance(self.start_date, str):
+            self.start_date = datetime.fromisoformat(self.start_date).date()
+        if hasattr(self, 'end_date') and isinstance(self.end_date, str):
+            self.end_date = datetime.fromisoformat(self.end_date).date()
+        if hasattr(self, 'expires_at') and isinstance(self.expires_at, str):
+            self.expires_at = datetime.fromisoformat(self.expires_at)
+        
+        # Set default expiration time (30 minutes from now)
+        if not hasattr(self, 'expires_at'):
+            self.expires_at = datetime.now() + timedelta(minutes=30)
+    
+    @classmethod
+    def create_lock(cls, user_id, cart_id, item_id, amount, start_date, end_date, session_id=None):
+        """Create a temporary lock for an item"""
+        # Clean up expired locks first
+        cls.cleanup_expired_locks()
+        
+        # Check if lock already exists for this user/session
+        existing_lock = cls.find_one({
+            'user_id': user_id,
+            'cart_id': cart_id,
+            'item_id': item_id,
+            'start_date': start_date.isoformat() if isinstance(start_date, date) else start_date,
+            'end_date': end_date.isoformat() if isinstance(end_date, date) else end_date
+        })
+        
+        if existing_lock:
+            # Update expiration time
+            existing_lock.expires_at = datetime.now() + timedelta(minutes=30)
+            existing_lock.amount = amount
+            existing_lock.session_id = session_id
+            return existing_lock.save()
+        
+        # Create new lock
+        lock = cls(
+            user_id=user_id,
+            cart_id=cart_id,
+            item_id=item_id,
+            amount=amount,
+            start_date=start_date,
+            end_date=end_date,
+            session_id=session_id
+        )
+        return lock.save()
+    
+    @classmethod
+    def cleanup_expired_locks(cls):
+        """Remove expired locks"""
+        current_time = datetime.now()
+        cls.get_collection().delete_many({
+            'expires_at': {'$lt': current_time.isoformat()}
+        })
+    
+    @classmethod
+    def get_active_locks_for_item(cls, item_id, start_date, end_date):
+        """Get active locks for an item in date range"""
+        cls.cleanup_expired_locks()
+        
+        if isinstance(start_date, str):
+            start_date = datetime.fromisoformat(start_date).date()
+        if isinstance(end_date, str):
+            end_date = datetime.fromisoformat(end_date).date()
+        
+        return cls.find_all({
+            'item_id': item_id,
+            '$or': [
+                {
+                    'start_date': {'$lte': end_date.isoformat()},
+                    'end_date': {'$gte': start_date.isoformat()}
+                }
+            ],
+            'expires_at': {'$gt': datetime.now().isoformat()}
+        })
+    
+    @classmethod
+    def release_user_locks(cls, user_id, cart_id=None):
+        """Release all locks for a user (when they complete or cancel booking)"""
+        filter_query = {'user_id': user_id}
+        if cart_id:
+            filter_query['cart_id'] = cart_id
+        
+        cls.get_collection().delete_many(filter_query)
+    
+    @classmethod
+    def extend_lock_expiration(cls, user_id, cart_id, additional_minutes=30):
+        """Extend lock expiration for user's current session"""
+        new_expiration = datetime.now() + timedelta(minutes=additional_minutes)
+        cls.get_collection().update_many(
+            {'user_id': user_id, 'cart_id': cart_id},
+            {'$set': {'expires_at': new_expiration.isoformat()}}
+        )
+    
+    def to_dict(self):
+        """Convert to dict with proper date handling"""
+        result = super().to_dict()
+        
+        # Convert dates to ISO format
+        date_fields = ['start_date', 'end_date']
+        for field in date_fields:
+            if hasattr(self, field) and getattr(self, field):
+                value = getattr(self, field)
+                if isinstance(value, date):
+                    result[field] = value.isoformat()
+        
+        # Handle expires_at separately as it's a datetime
+        if hasattr(self, 'expires_at') and self.expires_at:
+            if isinstance(self.expires_at, datetime):
+                result['expires_at'] = self.expires_at.isoformat()
+        
+        return result
+    
+    def __repr__(self):
+        return f"<TemporaryLock user_id={self.user_id} item_id={self.item_id} expires_at={self.expires_at}>"
+
+
 def init_db():
     """Initialize database with default data"""
     try:
@@ -335,6 +458,9 @@ def init_db():
         mongo.db.orders.create_index("cart_id")
         mongo.db.orders.create_index("status")
         mongo.db.orders.create_index([("start_date", 1), ("end_date", 1)])
+        mongo.db.temporary_locks.create_index("expires_at")
+        mongo.db.temporary_locks.create_index([("item_id", 1), ("start_date", 1), ("end_date", 1)])
+        mongo.db.temporary_locks.create_index([("user_id", 1), ("cart_id", 1)])
         
         # Insert default categories if they don't exist
         default_categories = [

@@ -6,7 +6,7 @@ from users import user_bp, CustomJSONEncoder
 from items import item_bp
 from bookings import booking_bp
 from ai_assistant import ai_bp
-from models import User, init_db
+from models import User, TemporaryLock, init_db
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 from bookings import send_booking_return_reminders
@@ -152,9 +152,20 @@ def create_app():
             except Exception as e:
                 logger.error("Error in scheduled booking return reminders", exc_info=True)
 
-    logger.info("Setting up background scheduler for booking reminders")
+    def cleanup_expired_temporary_locks():
+        with app.app_context():
+            logger.info("Running cleanup of expired temporary locks")
+            try:
+                TemporaryLock.cleanup_expired_locks()
+                logger.info("Cleanup of expired temporary locks completed successfully")
+            except Exception as e:
+                logger.error("Error in cleanup of expired temporary locks", exc_info=True)
+
+    logger.info("Setting up background scheduler for booking reminders and lock cleanup")
     scheduler = BackgroundScheduler()
     scheduler.add_job(func=scheduled_send_booking_return_reminders, trigger='cron', hour=9)
+    # Clean up expired locks every 10 minutes
+    scheduler.add_job(func=cleanup_expired_temporary_locks, trigger='interval', minutes=10)
     scheduler.start()
     
     # Initialize database and collections

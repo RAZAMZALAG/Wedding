@@ -2,7 +2,7 @@ import uuid
 from bson import ObjectId
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, current_user, get_jwt
-from models import Item, Order, User, Cart
+from models import Item, Order, User, Cart, TemporaryLock
 from extensions import mongo
 from datetime import datetime, date, timedelta
 from email_utils import send_booking_pending_email, send_booking_approved_email, send_return_reminder_email, send_return_thank_you_email, send_booking_rejected_email
@@ -393,15 +393,16 @@ def create_booking():
         if start_date >= end_date:
             return jsonify({"error": "INVALID_DATE_RANGE"}), 400
 
-        # Check item availability
+        # Check item availability (excluding user's own temporary locks)
         for cart_item in user_cart.items:
             item = Item.find_by_id(cart_item['item_id'])
             if not item:
                 return jsonify({"error": f"ITEM_NOT_FOUND: {cart_item['item_id']}"}), 404
 
-            # Check availability for this item
+            # Check availability for this item (excluding current user's locks)
             available_amount = get_available_amount_for_dates(
-                item._id, start_date, end_date, item.total_amount
+                item._id, start_date, end_date, item.total_amount,
+                exclude_user_id=current_user._id, exclude_cart_id=user_cart._id
             )
             
             if cart_item.get('amount', cart_item.get('quantity', 1)) > available_amount:
@@ -434,6 +435,9 @@ def create_booking():
         
         new_order.save()
 
+        # Release temporary locks for this user since order is now created
+        TemporaryLock.release_user_locks(current_user._id, user_cart._id)
+
         # Update cart status to ordered
         user_cart.status = "ORDERED"
         user_cart.save()
@@ -464,9 +468,11 @@ def create_booking():
         return jsonify({"error": f"Error creating booking: {str(e)}"}), 500
 
 
-def get_available_amount_for_dates(item_id, start_date, end_date, total_amount):
+def get_available_amount_for_dates(item_id, start_date, end_date, total_amount, exclude_user_id=None, exclude_cart_id=None):
     """Helper function to get available amount for item in date range"""
     try:
+        from models import TemporaryLock
+        
         # Get overlapping orders
         orders = Order.get_collection().find({
             "status": {"$nin": ["CANCELLED", "COMPLETED"]},
@@ -486,7 +492,31 @@ def get_available_amount_for_dates(item_id, start_date, end_date, total_amount):
                     if cart_item.get('item_id') == item_id:
                         booked_amount += cart_item.get('amount', 0)
 
-        return max(0, total_amount - booked_amount)
+        # Get temporary locks (excluding current user's locks if specified)
+        lock_filter = {
+            'item_id': item_id,
+            '$or': [
+                {
+                    'start_date': {'$lte': end_date.isoformat()},
+                    'end_date': {'$gte': start_date.isoformat()}
+                }
+            ],
+            'expires_at': {'$gt': datetime.now().isoformat()}
+        }
+        
+        # Exclude current user's locks if specified
+        if exclude_user_id and exclude_cart_id:
+            lock_filter['$and'] = [
+                {'$or': [
+                    {'user_id': {'$ne': exclude_user_id}},
+                    {'cart_id': {'$ne': exclude_cart_id}}
+                ]}
+            ]
+        
+        active_locks = TemporaryLock.find_all(lock_filter)
+        locked_amount = sum(lock.amount for lock in active_locks)
+
+        return max(0, total_amount - booked_amount - locked_amount)
     
     except Exception as e:
         logger.error("Error calculating available amount for item", extra={
@@ -802,6 +832,141 @@ def send_booking_return_reminders():
 
     except Exception as e:
         logger.error("Error in send_booking_return_reminders function", exc_info=True)
+
+
+@booking_bp.post('/lock-items')
+@jwt_required()
+def lock_items_temporarily():
+    """Create temporary locks for cart items during checkout process"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ['start_date', 'end_date']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({"error": f"MISSING_FIELD: {field}"}), 400
+
+        # Get user's active cart
+        user_cart = Cart.get_user_cart(current_user._id)
+        if not user_cart or not user_cart.items:
+            return jsonify({"error": "EMPTY_CART"}), 400
+
+        # Parse dates
+        try:
+            start_date = datetime.fromisoformat(data['start_date']).date()
+            end_date = datetime.fromisoformat(data['end_date']).date()
+        except ValueError:
+            return jsonify({"error": "INVALID_DATE_FORMAT"}), 400
+
+        if start_date >= end_date:
+            return jsonify({"error": "INVALID_DATE_RANGE"}), 400
+
+        # Clean up expired locks first
+        TemporaryLock.cleanup_expired_locks()
+
+        # Check availability and create locks
+        locked_items = []
+        for cart_item in user_cart.items:
+            item = Item.find_by_id(cart_item['item_id'])
+            if not item:
+                return jsonify({"error": f"ITEM_NOT_FOUND: {cart_item['item_id']}"}), 404
+
+            # Check availability (excluding current user's existing locks)
+            available_amount = get_available_amount_for_dates(
+                item._id, start_date, end_date, item.total_amount,
+                exclude_user_id=current_user._id, exclude_cart_id=user_cart._id
+            )
+            
+            requested_amount = cart_item.get('amount', cart_item.get('quantity', 1))
+            if requested_amount > available_amount:
+                return jsonify({
+                    "error": "INSUFFICIENT_AVAILABILITY",
+                    "item_name": item.name,
+                    "requested": requested_amount,
+                    "available": available_amount
+                }), 400
+
+            # Create temporary lock
+            session_id = data.get('session_id')  # Optional session ID for tracking
+            lock = TemporaryLock.create_lock(
+                user_id=current_user._id,
+                cart_id=user_cart._id,
+                item_id=item._id,
+                amount=requested_amount,
+                start_date=start_date,
+                end_date=end_date,
+                session_id=session_id
+            )
+            
+            locked_items.append({
+                "item_id": item._id,
+                "item_name": item.name,
+                "amount": requested_amount,
+                "lock_id": lock._id,
+                "expires_at": lock.expires_at.isoformat()
+            })
+
+        logger.info(f"Created temporary locks for {len(locked_items)} items for user {current_user._id}")
+        
+        return jsonify({
+            "message": "ITEMS_LOCKED",
+            "locked_items": locked_items,
+            "expires_in_minutes": 30
+        }), 201
+
+    except Exception as e:
+        logger.error("Error creating temporary locks", exc_info=True)
+        return jsonify({"error": f"Error creating temporary locks: {str(e)}"}), 500
+
+
+@booking_bp.post('/extend-locks')
+@jwt_required()
+def extend_locks():
+    """Extend the expiration time of user's temporary locks"""
+    try:
+        data = request.get_json()
+        additional_minutes = data.get('additional_minutes', 30)
+        
+        # Get user's active cart
+        user_cart = Cart.get_user_cart(current_user._id)
+        if not user_cart:
+            return jsonify({"error": "NO_ACTIVE_CART"}), 400
+
+        # Extend locks
+        TemporaryLock.extend_lock_expiration(current_user._id, user_cart._id, additional_minutes)
+        
+        logger.info(f"Extended locks for user {current_user._id} by {additional_minutes} minutes")
+        
+        return jsonify({
+            "message": "LOCKS_EXTENDED",
+            "extended_by_minutes": additional_minutes
+        }), 200
+
+    except Exception as e:
+        logger.error("Error extending temporary locks", exc_info=True)
+        return jsonify({"error": f"Error extending locks: {str(e)}"}), 500
+
+
+@booking_bp.delete('/release-locks')
+@jwt_required()
+def release_locks():
+    """Release all temporary locks for the current user"""
+    try:
+        # Get user's active cart
+        user_cart = Cart.get_user_cart(current_user._id)
+        cart_id = user_cart._id if user_cart else None
+        
+        # Release locks
+        TemporaryLock.release_user_locks(current_user._id, cart_id)
+        
+        logger.info(f"Released all temporary locks for user {current_user._id}")
+        
+        return jsonify({"message": "LOCKS_RELEASED"}), 200
+
+    except Exception as e:
+        logger.error("Error releasing temporary locks", exc_info=True)
+        return jsonify({"error": f"Error releasing locks: {str(e)}"}), 500
 
 
 @booking_bp.delete('/<booking_id>')
