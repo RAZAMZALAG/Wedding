@@ -5,12 +5,25 @@ import google.generativeai as genai
 from models import Item, Category
 import re
 from urllib.parse import quote
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 ai_bp = Blueprint("ai", __name__)
 logger = get_logger(__name__)
 
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-model = genai.GenerativeModel("gemini-1.5-flash")
+# Configure Gemini API
+api_key = os.getenv("GEMINI_API_KEY")
+if api_key and api_key != "your-gemini-api-key-here":
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    AI_ENABLED = True
+    logger.info("AI assistant enabled with Gemini API")
+else:
+    model = None
+    AI_ENABLED = False
+    logger.warning("Gemini API key not configured. AI assistant will be disabled.")
 
 REFUSAL_MESSAGES = {
     "he": "סליחה, אני יכולה לעזור רק בשאלות על רכישת מוצרים וחפצים לחתונות מהקטלוג שלנו במתחם Wedding Dreams.",
@@ -20,16 +33,26 @@ REFUSAL_MESSAGES = {
 }
 
 def get_catalog_summary():
-    items = Item.query.filter_by(hidden=False).all()
+    items = Item.find_all()
     category_map = {}
     for item in items:
-        cat = item.category or "Uncategorized"
-        category_map.setdefault(cat, []).append(item.name)
-    all_categories = [cat.name for cat in Category.query.all()]
+        # Access attributes directly from Item object
+        cat = getattr(item, 'category', 'Uncategorized')
+        name = getattr(item, 'name', 'Unknown')
+        hidden = getattr(item, 'hidden', False)
+        
+        # Skip hidden items
+        if hidden:
+            continue
+            
+        if cat not in category_map:
+            category_map[cat] = []
+        category_map[cat].append(name)
+    
     summary = ""
-    for cat in all_categories:
+    for cat, item_names in category_map.items():
         summary += f"{cat}:\n"
-        for name in category_map.get(cat, []):
+        for name in item_names:
             summary += f"- {name}\n"
     return summary
 
@@ -45,13 +68,25 @@ def linkify_item_names(reply, item_names):
             break
     return reply
 
+@ai_bp.route("/chat", methods=["POST"])
+def chat():
+    """Chat endpoint - alias for ask endpoint"""
+    return ask_ai()
+
 @ai_bp.route("/ask", methods=["POST"])
 def ask_ai():
     data = request.get_json()
     user_message = data.get("message", "")
     lang = data.get("lang", "en")  # Default to English if not provided
+    
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
+
+    # Check if AI is enabled
+    if not AI_ENABLED:
+        return jsonify({
+            "reply": REFUSAL_MESSAGES.get(lang, REFUSAL_MESSAGES['en']) + " (AI assistant is currently unavailable)"
+        }), 200
 
     catalog_summary = get_catalog_summary()
 
@@ -98,8 +133,10 @@ def ask_image():
     if size > 10 * 1024 * 1024:
         return jsonify({"error": "Image too large"}), 400
 
-    items = Item.query.filter_by(hidden=False).all()
-    item_names = [item.name for item in items]
+    items = Item.find_all()
+    # Filter only visible items (not hidden)
+    visible_items = [item for item in items if not getattr(item, 'hidden', False)]
+    item_names = [getattr(item, 'name', 'Unknown') for item in visible_items]
     catalog_summary = get_catalog_summary()
 
     system_prompt = (

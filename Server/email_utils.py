@@ -3,10 +3,14 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from logger_config import get_logger
 import os
+from dotenv import load_dotenv
 
-# Private information
-SENDER_EMAIL = "shola.project.hadar@gmail.com"
-SENDER_PASSWORD = "rzlo xsmn orxb atuk"
+# Load environment variables
+load_dotenv()
+
+# Email configuration from environment variables
+SENDER_EMAIL = os.getenv('SENDER_EMAIL', 'your-email@gmail.com')
+SENDER_PASSWORD = os.getenv('SENDER_PASSWORD', 'your-app-password')
 
 logger = get_logger(__name__)
 
