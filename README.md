@@ -1,153 +1,107 @@
-# Wedding Planner - מערכת ניהול השכרות לאירועים 💍
+# Wedding Dreams - מערכת ניהול השכרות לחתונות 💍
 
-מערכת מקצועית לניהול השכרות ציוד לאירועים עם עוזר AI, ניהול לקוחות וזמינות ציוד.
-
-## 🚀 איך להריץ את הפרויקט
-
-### אופציה 1: הרצה עם Docker (מומלץ)
-
-```bash
-# 1. שכפול הפרויקט
-git clone https://github.com/RAZAMZALAG/Wedding.git
-cd Wedding
-
-# 2. הפעלת המערכת (כולל טעינת מסד נתונים אוטומטית)
-docker compose up --build
-
-# גישה: http://localhost:5000
-# עצירה: docker compose down
-```
-
-**מה קורה מאחורי הקלעים:**
-- המערכת אוטומטית מורידה תמונות קטלוג
-- יוצרת 100+ משתמשים דמו במערכת
-- מייצרת 200+ מוצרים מגוונים מכל הקטגוריות
-- מתחילה את השרת Flask על פורט 5000
-
-### אופציה 2: הרצה מקומית (כולל טעינת DB)
-
-**התקנה חד פעמית:**
-```bash
-# 1. התקן דרישות: Python 3.13+, Node.js 18+, MongoDB
-winget install MongoDB.Server  # Windows
-winget install Python.Python.3.13
-winget install OpenJS.NodeJS
-
-# 2. שכפול והתקנה
-git clone https://github.com/RAZAMZALAG/Wedding.git
-cd Wedding
-
-# 3. סביבה וירטואלית
-python -m venv venv
-.\venv\Scripts\Activate.ps1  # Windows
-pip install -r Server/requirements.txt
-
-# 4. התקנת frontend
-cd Client
-npm install
-cd ..
-```
-
-**הפעלה יומיומית:**
-```bash
-# 1. הפעל MongoDB
-net start MongoDB  # Windows
-
-# 2. טעינת DB (רק פעם ראשונה או לאיפוס)
-cd Server
-python migrate_to_mongo.py
-
-# 3. הפעל שרת (טרמינל 1)
-python main.py
-
-# 4. הפעל frontend (טרמינל 2)
-cd ../Client
-npm run dev
-
-# גישה: http://localhost:5173
-```
-
-## 👤 כניסה למערכת
-
-| משתמש | סיסמה | תפקיד |
-|-------|--------|--------|
-| admin@email.com | password | מנהל |
-| user@email.com | password | משתמש |
+מערכת מקצועית לניהול השכרות ציוד לחתונות ואירועים עם עוזר AI ו-37 פריטי השכרה.
 
 ---
 
-**טכנולוגיות:** React, Flask, MongoDB, AI Assistant
+## 🚀 איך להריץ את הפרויקט
 
-# Wedding Planner - Event Equipment Rental System 💍✨
-
-A complete wedding equipment rental management system with inventory tracking, booking management, and AI-powered assistance.
-
-![Wedding Planner](https://img.shields.io/badge/Wedding-Planner-pink?style=for-the-badge)
-![React](https://img.shields.io/badge/React-18-blue?style=for-the-badge&logo=react)
-![Flask](https://img.shields.io/badge/Flask-Python-green?style=for-the-badge&logo=flask)
-![Docker](https://img.shields.io/badge/Docker-Compose-blue?style=for-the-badge&logo=docker)
-
-## 📋 Project Overview
-
-Wedding Planner is a comprehensive rental management system designed for wedding equipment businesses. It features:
-
-- 🎯 **Complete Equipment Catalog** - Manage wedding items across multiple categories
-- 📅 **Advanced Booking System** - Date-range based availability and rental management
-- 👥 **Customer Management** - User accounts, authentication, and booking history
-- 🤖 **AI Assistant** - Powered by Google Gemini for wedding planning advice
-- 🌍 **Multi-language Support** - Hebrew, English, Arabic, and Russian
-- 📱 **Responsive Design** - Works on desktop, tablet, and mobile
-- 📊 **Admin Dashboard** - Complete business management tools
-
-## 🎪 Equipment Categories
-
-- 🍽️ **Tableware & Serving** - Plates, glasses, serving dishes
-- 🪑 **Furniture** - Chairs, tables, seating arrangements  
-- ✨ **Decorations** - Centerpieces, lighting, floral arrangements
-- 🎤 **Audio/Visual** - Sound systems, microphones, lighting
-- � **Catering Equipment** - Chafing dishes, warmers, serving tools
-- 🎪 **Event Support** - Tents, arches, backdrops
-- 💌 **Stationery** - Invitations, place cards, signage
-- 💎 **Accessories** - Jewelry, veils, decorative items
-- 🚗 **Transportation** - Wedding car decorations
-
-## 🚀 Quick Start Guide
-
-### Option 1: Docker Setup (Recommended - 5 Minutes)
-
-**Prerequisites:**
-- [Docker Desktop](https://www.docker.com/products/docker-desktop) installed and running
+### 🐳 **הרצה עם Docker (מומלץ - דקה אחת)**
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/YOUR_USERNAME/wedding-planner.git
-cd wedding-planner
+# שכפול הפרויקט
+git clone https://github.com/RAZAMZALAG/Wedding.git
+cd Wedding
 
-# 2. Start everything with one command
+# הפעלת כל המערכת
 docker compose up --build
+
+# הגישה: http://localhost:5173
 ```
 
-**That's it!** Your system is now running:
-- 🌐 **Frontend**: http://localhost:5173
-- 🔌 **API**: http://localhost:5000
-- 🗄️ **Database**: PostgreSQL (internal)
+### 💻 **הרצה מקומית (למפתחים)**
 
-### Option 2: Manual Setup
+**דרישות:** Python 3.13+, Node.js 18+, MongoDB
 
-**Prerequisites:**
-- Node.js 18+
-- Python 3.8+
-- PostgreSQL 12+
-
-#### Database Setup
 ```bash
-# MongoDB will start automatically with Docker Compose
-# No manual database creation needed
+# 1. שכפול והתקנה
+git clone https://github.com/RAZAMZALAG/Wedding.git
+cd Wedding
 
-# Or start MongoDB manually:
-mongosh
-# In MongoDB shell:
-use wedding_planner
+# 2. סביבה וירטואלית
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r Server/requirements.txt
+
+# 3. התקנת Frontend
+cd Client && npm install && cd ..
+
+# 4. הפעלה
+# טרמינל 1 - Server:
+cd Server && python main.py
+
+# טרמינל 2 - Client:
+cd Client && npm run dev
+
+# הגישה: http://localhost:5173
+```
+
+---
+
+## 👤 כניסה למערכת
+
+### **👨‍💼 חשבון מנהל מערכת**
+- **אימייל:** `admin@email.com`
+- **סיסמה:** `admin123`
+- **הרשאות:** ניהול מלא - פריטים, הזמנות, משתמשים
+
+### **👤 חשבון משתמש רגיל**
+- **אימייל:** `user@email.com`
+- **סיסמה:** `user123`
+- **הרשאות:** הזמנות ועיון בקטלוג
+
+---
+
+## 🎯 פעולות במערכת
+
+### **👀 לכל המשתמשים:**
+- 📋 עיון בקטלוג של 37 פריטי השכרה
+- 🔍 חיפוש וסינון לפי קטגוריות
+- 🤖 שיחה עם עוזר AI לתכנון החתונה
+- 👤 רישום וכניסה למערכת
+
+### **🛒 למשתמשים רשומים:**
+- 📅 הזמנת פריטים לטווח תאריכים
+- � מעקב אחר הזמנות שלי
+- 💰 צפייה בעלויות והערות
+- 📧 קבלת התראות אימייל
+
+### **👨‍💼 למנהלים בלבד:**
+- ➕ הוספה/עריכה/מחיקה של פריטים
+- � ניהול כל ההזמנות במערכת
+- � ניהול משתמשים וחסימות
+- 📈 צפייה בסטטיסטיקות
+
+---
+
+## 📦 מה כלול במערכת?
+
+**37 פריטי השכרה בקטגוריות:**
+- 🍽️ כלי הגשה וחרסינה (6 פריטים)
+- 🪑 כיסאות ושולחנות (5 פריטים)  
+- ✨ אבזרי נוי ועיצוב (10 פריטים)
+- 🎤 ציוד הגברה (4 פריטים)
+- 🔥 ציוד בישול וחימום (5 פריטים)
+- 🛠️ ציוד עזר לאירועים (5 פריטים)
+- � ציוד תאורה (2 פריטים)
+
+**טכנולוגיות:** React + Flask + MongoDB + Docker + AI Assistant
+
+---
+
+## � תמיכה
+
+נתקלת בבעיה? בדוק את [הלוגים](./Server/logs/) או [צור issue](https://github.com/RAZAMZALAG/Wedding/issues) בגיטהאב.
 ```
 
 #### Backend Setup

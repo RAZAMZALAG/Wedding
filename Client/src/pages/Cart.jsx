@@ -126,7 +126,7 @@ const Cart = () => {
     try {
       const response = await api.delete(EP_REMOVE_FROM_CART + `/${itemId}`);
       setCartItems((prevItems) =>
-        prevItems.filter((item) => item.id !== itemId),
+        prevItems.filter((item) => item.item.id !== itemId),
       );
       refreshCartCount(); // <-- update context count
     } catch (error) {

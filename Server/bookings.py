@@ -473,6 +473,8 @@ def get_available_amount_for_dates(item_id, start_date, end_date, total_amount, 
     try:
         from models import TemporaryLock
         
+        logger.info(f"🔍 Checking availability for item {item_id}, dates {start_date} to {end_date}, total_amount={total_amount}")
+        
         # Get overlapping orders
         orders = Order.get_collection().find({
             "status": {"$nin": ["CANCELLED", "COMPLETED"]},
@@ -485,12 +487,18 @@ def get_available_amount_for_dates(item_id, start_date, end_date, total_amount, 
         })
 
         booked_amount = 0
+        order_count = 0
         for order in orders:
+            order_count += 1
             cart = Cart.find_by_id(order.get("cart_id"))
             if cart and hasattr(cart, 'items'):
                 for cart_item in cart.items:
                     if cart_item.get('item_id') == item_id:
-                        booked_amount += cart_item.get('amount', 0)
+                        amount = cart_item.get('amount', 0)
+                        booked_amount += amount
+                        logger.info(f"📝 Found overlapping order: cart_id={order.get('cart_id')}, item_amount={amount}")
+
+        logger.info(f"📊 Total overlapping orders: {order_count}, booked_amount: {booked_amount}")
 
         # Get temporary locks (excluding current user's locks if specified)
         lock_filter = {
@@ -515,8 +523,13 @@ def get_available_amount_for_dates(item_id, start_date, end_date, total_amount, 
         
         active_locks = TemporaryLock.find_all(lock_filter)
         locked_amount = sum(lock.amount for lock in active_locks)
+        
+        logger.info(f"🔒 Active locks: {len(active_locks)}, locked_amount: {locked_amount}")
 
-        return max(0, total_amount - booked_amount - locked_amount)
+        final_available = max(0, total_amount - booked_amount - locked_amount)
+        logger.info(f"✅ Final calculation: {total_amount} - {booked_amount} - {locked_amount} = {final_available}")
+
+        return final_available
     
     except Exception as e:
         logger.error("Error calculating available amount for item", extra={
@@ -982,72 +995,98 @@ def get_available_date_ranges():
 def check_date_range_availability():
     """Check if a specific date range is available for all cart items"""
     try:
-        data = request.get_json()
+        logger.info(f"🔍 Starting date range check for user: {current_user.email}")
         
-        # Validate required fields
-        required_fields = ['start_date', 'end_date']
-        for field in required_fields:
-            if not data.get(field):
-                return jsonify({"error": f"MISSING_FIELD: {field}"}), 400
-
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "NO_DATA"}), 400
+            
+        logger.info(f"📅 Request data: {data}")
+        
         # Parse dates
+        start_date_str = data.get('start_date')
+        end_date_str = data.get('end_date')
+        
+        if not start_date_str or not end_date_str:
+            return jsonify({"error": "MISSING_DATES"}), 400
+
         try:
-            start_date = datetime.fromisoformat(data['start_date']).date()
-            end_date = datetime.fromisoformat(data['end_date']).date()
+            start_date = datetime.fromisoformat(start_date_str).date()
+            end_date = datetime.fromisoformat(end_date_str).date()
         except ValueError:
             return jsonify({"error": "INVALID_DATE_FORMAT"}), 400
 
         if start_date > end_date:
             return jsonify({"error": "INVALID_DATE_RANGE"}), 400
 
-        # Get user's active cart
+        # Get user's cart
         user_cart = Cart.get_user_cart(current_user._id)
+        logger.info(f"🛒 Found cart: {user_cart._id if user_cart else 'None'}")
+        
         if not user_cart or not user_cart.items:
+            logger.info("✅ Empty cart - all dates available")
             return jsonify({
                 "available": True,
                 "message": "EMPTY_CART"
             }), 200
 
-        # Check each item in the cart for the entire date range
-        availability_details = []
+        logger.info(f"🛒 Cart has {len(user_cart.items)} items")
+        
+        # Check each item in cart
         all_available = True
-
+        item_details = []
+        
         for cart_item in user_cart.items:
-            item = Item.find_by_id(cart_item['item_id'])
+            # Get item ID
+            item_id = cart_item.get('item_id')
+            if not item_id:
+                logger.error(f"❌ Missing item_id in cart item: {cart_item}")
+                continue
+                
+            # Find the item
+            item = Item.find_by_id(item_id)
             if not item:
-                return jsonify({"error": f"ITEM_NOT_FOUND: {cart_item['item_id']}"}), 404
-
-            # Check availability for this item across the entire date range
+                logger.error(f"❌ Item not found: {item_id}")
+                return jsonify({"error": f"ITEM_NOT_FOUND: {item_id}"}), 404
+                
+            # Get requested amount
+            requested_amount = cart_item.get('amount', 1)
+            
+            # Check availability for this date range
             available_amount = get_available_amount_for_dates(
                 item._id, start_date, end_date, item.total_amount,
-                exclude_user_id=current_user._id, exclude_cart_id=user_cart._id
+                exclude_user_id=current_user._id, 
+                exclude_cart_id=user_cart._id
             )
             
-            requested_amount = cart_item.get('amount', cart_item.get('quantity', 1))
             is_available = requested_amount <= available_amount
-
-            availability_details.append({
+            
+            logger.info(f"� {item.name}: requested={requested_amount}, available={available_amount}, ok={is_available}")
+            
+            item_details.append({
                 "item_id": item._id,
                 "item_name": item.name,
                 "requested": requested_amount,
                 "available": available_amount,
                 "is_available": is_available
             })
-
+            
             if not is_available:
                 all_available = False
 
+        logger.info(f"✅ Final result: {all_available}")
+        
         return jsonify({
             "available": all_available,
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
-            "details": availability_details,
-            "range_days": (end_date - start_date).days + 1
+            "start_date": start_date_str,
+            "end_date": end_date_str,
+            "details": item_details
         }), 200
 
     except Exception as e:
-        logger.error("Error checking date range availability", exc_info=True)
-        return jsonify({"error": f"Error checking date range: {str(e)}"}), 500
+        logger.error("❌ Error in check_date_range_availability", exc_info=True)
+        return jsonify({"error": "INTERNAL_ERROR"}), 500
 
 
 @booking_bp.post('/lock-items')

@@ -1162,9 +1162,6 @@ const Catalog = () => {
                 showFirstButton
                 showLastButton
               />
-              <Typography variant="caption" color="text.secondary">
-                Debug: totalItems={totalItems}, itemsPerPage={itemsPerPage}, pages={Math.ceil(totalItems / itemsPerPage)}
-              </Typography>
             </Stack>
           </Paper>
         </Box>

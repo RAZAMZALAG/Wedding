@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, send_from_directory, request, g
 from flask_cors import CORS
+from flask_jwt_extended import jwt_required, current_user
 from extensions import mongo, jwt
 from auth import auth_bp
 from users import user_bp, CustomJSONEncoder
@@ -11,6 +12,7 @@ from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 from bookings import send_booking_return_reminders
 from logger_config import init_app_logging, get_logger, log_request_response, PerformanceMonitor
+from datetime import datetime
 import atexit, os, uuid, time
 
 load_dotenv()
