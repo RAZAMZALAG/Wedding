@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Pagination</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .pagination { margin: 20px 0; }
+        .page-btn { margin: 5px; padding: 10px; cursor: pointer; }
+        .active { background-color: blue; color: white; }
+        .result { margin-top: 20px; padding: 10px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>בדיקת פגינציה - Wedding API</h1>
+    
+    <div class="pagination">
+        <button class="page-btn" onclick="loadPage(1)">עמוד 1</button>
+        <button class="page-btn" onclick="loadPage(2)">עמוד 2</button>
+    </div>
+    
+    <div id="result" class="result">
+        <p>לחץ על עמוד לטעינת הנתונים...</p>
+    </div>
+
+    <script>
+        async function loadPage(page) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>טוען...</p>';
+            
+            try {
+                const response = await fetch(`http://localhost:5000/api/items/?page=${page}&amount_per_page=20`);
+                const data = await response.json();
+                
+                // Update active button
+                document.querySelectorAll('.page-btn').forEach(btn => btn.classList.remove('active'));
+                event.target.classList.add('active');
+                
+                resultDiv.innerHTML = `
+                    <h3>תוצאות עמוד ${page}</h3>
+                    <p><strong>סה"כ פריטים:</strong> ${data.total}</p>
+                    <p><strong>עמוד נוכחי:</strong> ${data.current_page}</p>
+                    <p><strong>סה"כ עמודים:</strong> ${data.pages}</p>
+                    <p><strong>פריטים בעמוד:</strong> ${data.items.length}</p>
+                    <hr>
+                    <h4>רשימת פריטים:</h4>
+                    <ul>
+                        ${data.items.map(item => `<li>${item.name} - ${item.price}₪</li>`).join('')}
+                    </ul>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `<p style="color: red;">שגיאה: ${error.message}</p>`;
+            }
+        }
+        
+        // Load first page on start
+        window.onload = () => loadPage(1);
+    </script>
+</body>
+</html>

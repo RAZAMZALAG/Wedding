@@ -217,6 +217,9 @@ const Catalog = () => {
         signal: controller.signal, // Pass the signal to allow request cancellation
       });
 
+      console.log("🔍 Full API response:", response.data);
+      console.log("📊 Response total:", response.data.total, "items count:", response.data.items?.length);
+
       // If the request is not aborted, update state with the response data
       if (!controller.signal.aborted) {
         if (response.status === HttpStatusCode.Ok) {
@@ -355,6 +358,7 @@ const Catalog = () => {
 
   // Handle page change
   const handlePageChange = (event, value) => {
+    console.log("🔄 Page change triggered:", { from: currentPage, to: value });
     setFiltersChanged(true);
     setCurrentPage(value);
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
@@ -1136,6 +1140,7 @@ const Catalog = () => {
           )}
         </Box>
       )}
+      
       {/* Pagination */}
       {totalItems > itemsPerPage && (
         <Box display="flex" justifyContent="center" mt={4} mb={3}>
@@ -1157,6 +1162,9 @@ const Catalog = () => {
                 showFirstButton
                 showLastButton
               />
+              <Typography variant="caption" color="text.secondary">
+                Debug: totalItems={totalItems}, itemsPerPage={itemsPerPage}, pages={Math.ceil(totalItems / itemsPerPage)}
+              </Typography>
             </Stack>
           </Paper>
         </Box>

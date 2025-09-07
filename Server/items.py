@@ -39,7 +39,10 @@ def get_paged_items():
 
         # Include hidden items only if the user has permission level 2 or above
         if not current_user or current_user.permission < 2:
-            filter_query['hidden'] = {'$ne': True}
+            filter_query['$or'] = [
+                {'hidden': {'$ne': True}},
+                {'hidden': {'$exists': False}}
+            ]
 
         # Filter by availability (only show items with available stock for rental system)
         if only_available:
