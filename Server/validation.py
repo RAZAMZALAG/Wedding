@@ -1,5 +1,5 @@
 from flask import jsonify
-from logger_config import get_logger
+from .logger_config import get_logger
 import re
 
 logger = get_logger(__name__)

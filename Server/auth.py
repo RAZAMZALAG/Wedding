@@ -1,13 +1,14 @@
 from flask import Blueprint, jsonify, request, render_template_string, redirect
 from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, current_user, decode_token
-from models import User
+#from models import User
+from .models import User
 from datetime import timedelta
-from validation import validate_registration
-from logger_config import get_logger, log_auth_event, log_database_operation, PerformanceMonitor
+from .validation import validate_registration
+from .logger_config import get_logger, log_auth_event, log_database_operation, PerformanceMonitor
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email_utils import send_verification_email  
+from .email_utils import send_verification_email  
 import uuid
 import os
 

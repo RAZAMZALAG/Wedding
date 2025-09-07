@@ -1,5 +1,5 @@
 from marshmallow import fields, Schema
-from logger_config import get_logger
+from .logger_config import get_logger
 
 # Setup logger for schema operations
 logger = get_logger(__name__)
